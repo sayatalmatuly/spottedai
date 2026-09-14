@@ -1,0 +1,625 @@
+'use client';
+
+import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { saveAttendance } from '@/app/actions';
+import type { ClassInfo, DashboardStats, ClassBarStat, LogEntry, AttendanceStatus, StudentWithStatus } from '@/lib/types';
+import './AttendanceDashboard.css';
+
+interface DashboardProps {
+  classes: ClassInfo[];
+  stats: DashboardStats;
+  classBarStats: ClassBarStat[];
+  donutStats: { presentPct: number; latePct: number; absentPct: number };
+  recentLogs: LogEntry[];
+  teacherName: string;
+  teacherInitials: string;
+  userRole?: 'ADMIN' | 'TEACHER';
+  userEmail?: string;
+  overallPct: number;
+  presentPct: number;
+  latePct: number;
+  absentPct: number;
+  unmarkedClasses: ClassInfo[];
+  markedCount: number;
+  today: string;
+}
+
+const LOG_GRADIENTS = [
+  'linear-gradient(155deg,#34C8FF,#0071E3)',
+  'linear-gradient(155deg,#FF9F0A,#FF453A)',
+  'linear-gradient(155deg,#8E5CFF,#0071E3)',
+  'linear-gradient(155deg,#30D158,#00B37D)'
+];
+
+export default function AttendanceDashboard(props: DashboardProps) {
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  
+  const [activeClassId, setActiveClassId] = useState<string>(props.classes.length > 0 ? props.classes[0].id : '');
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isToastVisible, setIsToastVisible] = useState<boolean>(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
+  const [students, setStudents] = useState<StudentWithStatus[]>([]);
+  const [isLoadingStudents, setIsLoadingStudents] = useState<boolean>(false);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+    router.refresh();
+  };
+
+  const activeClass = props.classes.find(c => c.id === activeClassId);
+
+  useEffect(() => {
+    if (!activeClassId && props.classes.length > 0) {
+      setActiveClassId(props.classes[0].id);
+    }
+  }, [props.classes, activeClassId]);
+
+  const loadStudentsForModal = async () => {
+    if (!activeClassId) return;
+    setIsLoadingStudents(true);
+    try {
+      const { data: studentsData } = await supabase
+        .from('students')
+        .select('*')
+        .eq('class_id', activeClassId)
+        .order('full_name');
+
+      const { data: logsData } = await supabase
+        .from('attendance_logs')
+        .select('student_id, status')
+        .eq('class_id', activeClassId)
+        .eq('date', props.today);
+
+      const logsMap = new Map<string, AttendanceStatus>();
+      if (logsData) {
+        logsData.forEach(l => logsMap.set(l.student_id, l.status));
+      }
+
+      if (studentsData) {
+        const studentsWithStatus = studentsData.map(s => ({
+          ...s,
+          status: logsMap.get(s.id) || 'present' // default to present
+        })) as StudentWithStatus[];
+        setStudents(studentsWithStatus);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingStudents(false);
+    }
+  };
+
+  const handleOpenModal = () => {
+    setIsModalOpen(true);
+    loadStudentsForModal();
+  };
+
+  const handleStatusChange = (id: string, status: AttendanceStatus) => {
+    setStudents((prev) =>
+      prev.map((student) => (student.id === id ? { ...student, status } : student))
+    );
+  };
+
+  const handleSaveMarks = async () => {
+    if (!activeClassId) return;
+    try {
+      const marks = students.map(s => ({ studentId: s.id, status: s.status }));
+      await saveAttendance(activeClassId, props.today, marks);
+      
+      setIsModalOpen(false);
+      setIsToastVisible(true);
+      setTimeout(() => {
+        setIsToastVisible(false);
+      }, 2400);
+      
+      router.refresh();
+    } catch (e) {
+      console.error(e);
+      alert('Failed to save attendance');
+    }
+  };
+
+  const formattedDate = new Date(props.today).toLocaleDateString('ru-RU', { 
+    weekday: 'long', 
+    day: 'numeric', 
+    month: 'long', 
+    year: 'numeric' 
+  });
+  const capitalizedDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+
+  return (
+    <div className="shell">
+      {/* SIDEBAR */}
+      <aside className="sidebar">
+        <div className="brand">
+          <div>
+            <h1>Журнал</h1>
+            <span>Информационно-технологический школа-лицей №3 им.С.Толыбекова</span>
+          </div>
+        </div>
+
+        <div className="side-label">Классы</div>
+        <ul className="side-list">
+          {props.classes.map((item) => (
+            <li key={item.id}>
+              <div
+                className={`side-item ${activeClassId === item.id ? 'active' : ''}`}
+                onClick={() => setActiveClassId(item.id)}
+              >
+                {item.name}
+                {props.unmarkedClasses.some(c => c.id === item.id) && <span className="chip" />}
+                {item.student_count !== undefined && <span className="num">{item.student_count}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <div 
+          className="side-teacher" 
+          onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+          style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}
+        >
+          <div className="avatar-sm">{props.teacherInitials}</div>
+          <div className="who">
+            <b>{props.teacherName}</b>
+            <span>{props.userRole === 'ADMIN' ? 'Администратор' : 'Учитель'}</span>
+          </div>
+          <div style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-3)' }}>
+            {isUserMenuOpen ? '▲' : '▼'}
+          </div>
+
+          {isUserMenuOpen && (
+            <div 
+              className="user-popup-menu"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                bottom: '100%',
+                left: '0',
+                right: '0',
+                marginBottom: '8px',
+                background: '#FFFFFF',
+                borderRadius: '14px',
+                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.15)',
+                padding: '6px',
+                zIndex: 100,
+                border: '1px solid rgba(0,0,0,0.08)'
+              }}
+            >
+              <Link
+                href="/profile"
+                prefetch
+                onClick={() => setIsUserMenuOpen(false)}
+                className="user-popup-link"
+              >
+                👤 Личный кабинет
+              </Link>
+
+              {props.userRole === 'ADMIN' && (
+                <Link
+                  href="/admin/teachers"
+                  prefetch
+                  onClick={() => setIsUserMenuOpen(false)}
+                  className="user-popup-link admin"
+                >
+                  ⚙️ Админ-панель
+                </Link>
+              )}
+
+              <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)', margin: '4px 0' }} />
+
+              <div 
+                onClick={handleSignOut}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  color: 'var(--red)'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,69,58,0.08)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                🚪 Выйти
+              </div>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* MAIN */}
+      <main className="main">
+        <div className="topbar">
+          <h2>Дашборд</h2>
+          <div className="date">{capitalizedDate}</div>
+        </div>
+
+        {/* HERO / RINGS */}
+        <section className="hero">
+          <div className="ring-box">
+            <svg viewBox="0 0 190 190">
+              <circle cx="95" cy="95" r="82" fill="none" stroke="var(--green-soft)" strokeWidth="13" />
+              <circle
+                cx="95"
+                cy="95"
+                r="82"
+                fill="none"
+                stroke="var(--green)"
+                strokeWidth="13"
+                strokeLinecap="round"
+                strokeDasharray="515.2"
+                strokeDashoffset={515.2 * (1 - props.presentPct / 100)}
+              />
+              <circle cx="95" cy="95" r="61" fill="none" stroke="var(--orange-soft)" strokeWidth="13" />
+              <circle
+                cx="95"
+                cy="95"
+                r="61"
+                fill="none"
+                stroke="var(--orange)"
+                strokeWidth="13"
+                strokeLinecap="round"
+                strokeDasharray="383.3"
+                strokeDashoffset={383.3 * (1 - props.latePct / 100)}
+              />
+              <circle cx="95" cy="95" r="40" fill="none" stroke="var(--red-soft)" strokeWidth="13" />
+              <circle
+                cx="95"
+                cy="95"
+                r="40"
+                fill="none"
+                stroke="var(--red)"
+                strokeWidth="13"
+                strokeLinecap="round"
+                strokeDasharray="251.3"
+                strokeDashoffset={251.3 * (1 - props.absentPct / 100)}
+              />
+            </svg>
+            <div className="ring-center">
+              <div className="n">{props.overallPct}%</div>
+              <div className="l">сегодня</div>
+            </div>
+          </div>
+
+          <div className="hero-copy">
+            <h3>Посещаемость стабильна третью неделю подряд</h3>
+            <p>
+              {props.stats.total} учеников на учёте · отметки внесены по {props.markedCount} классам из {props.classes.length}. 
+              {props.unmarkedClasses.length > 0 && ` Классу ${props.unmarkedClasses.map(c => c.name).join(', ')} ещё нужно отметить сегодняшний день.`}
+            </p>
+            <div className="ring-legend">
+              <div>
+                <span className="sw" style={{ background: 'var(--green)' }} />
+                Пришли <b>{props.presentPct}%</b>
+              </div>
+              <div>
+                <span className="sw" style={{ background: 'var(--orange)' }} />
+                Опоздали <b>{props.latePct}%</b>
+              </div>
+              <div>
+                <span className="sw" style={{ background: 'var(--red)' }} />
+                Нет <b>{props.absentPct}%</b>
+              </div>
+            </div>
+          </div>
+
+          <button className="btn-mark" onClick={handleOpenModal}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 12l5 5L20 6" />
+            </svg>
+            Отметить учеников
+          </button>
+        </section>
+
+        {/* STAT ROW */}
+        <section className="stat-row">
+          <div className="stat-card present">
+            <div className="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 12l5 5L20 6" />
+              </svg>
+            </div>
+            <div className="n">{props.stats.present}</div>
+            <div className="l">Пришли</div>
+          </div>
+          <div className="stat-card late">
+            <div className="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 3" />
+              </svg>
+            </div>
+            <div className="n">{props.stats.late}</div>
+            <div className="l">Опоздали</div>
+          </div>
+          <div className="stat-card absent">
+            <div className="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </div>
+            <div className="n">{props.stats.absent}</div>
+            <div className="l">Отсутствуют</div>
+          </div>
+          <div className="stat-card total">
+            <div className="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 19V5a1 1 0 011-1h11l4 4v11a1 1 0 01-1 1H5a1 1 0 01-1-1z" />
+              </svg>
+            </div>
+            <div className="n">{props.stats.total}</div>
+            <div className="l">Всего в списках</div>
+          </div>
+        </section>
+
+        {/* AI + TREND */}
+        <section className="grid-2">
+          <div className="panel ai-panel">
+            <div className="ai-head">
+              <div className="ai-badge">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" />
+                </svg>
+              </div>
+              <h4>ИИ-аналитика</h4>
+            </div>
+            <div className="insight">
+              <span className="dot risk" />
+              <p><b>Смирнов К., 6Б</b> — три пропуска подряд. Стоит связаться с родителями.</p>
+            </div>
+            <div className="insight">
+              <span className="dot watch" />
+              <p>По понедельникам опозданий на <b>18% больше</b>, чем в среднем за неделю.</p>
+            </div>
+            <div className="insight">
+              <span className="dot good" />
+              <p><b>7Б</b> держит лучшую посещаемость за месяц — 97%, уже третью неделю подряд.</p>
+            </div>
+            <div className="insight">
+              <span className="dot watch" />
+              <p>В пятницу посещаемость может снизиться на 4–6%, как и в предыдущие пятницы месяца.</p>
+            </div>
+          </div>
+
+          <div className="panel trend-wrap">
+            <div className="trend-top">
+              <div>
+                <div className="big">93.7%</div>
+                <div className="cap">Средняя посещаемость за неделю</div>
+              </div>
+              <div className="trend-pill">+2.1%</div>
+            </div>
+            <svg viewBox="0 0 300 120" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0071E3" stopOpacity="0.22" />
+                  <stop offset="100%" stopColor="#0071E3" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <line x1="0" y1="20" x2="300" y2="20" stroke="rgba(0,0,0,.06)" strokeWidth="1" />
+              <line x1="0" y1="55" x2="300" y2="55" stroke="rgba(0,0,0,.06)" strokeWidth="1" />
+              <line x1="0" y1="90" x2="300" y2="90" stroke="rgba(0,0,0,.06)" strokeWidth="1" />
+              <path
+                d="M8,55 C35,20 55,20 80,38 C105,55 120,10 155,14 C185,17 195,62 225,50 C250,40 265,55 292,32 L292,110 L8,110 Z"
+                fill="url(#areaFill)"
+              />
+              <path
+                d="M8,55 C35,20 55,20 80,38 C105,55 120,10 155,14 C185,17 195,62 225,50 C250,40 265,55 292,32"
+                fill="none"
+                stroke="#0071E3"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              />
+              <circle cx="292" cy="32" r="4.5" fill="#fff" stroke="#0071E3" strokeWidth="2.5" />
+              <g fontSize="9" fill="#AEAEB2">
+                <text x="4" y="120">Пн</text>
+                <text x="52" y="120">Вт</text>
+                <text x="100" y="120">Ср</text>
+                <text x="148" y="120">Чт</text>
+                <text x="196" y="120">Пт</text>
+                <text x="270" y="120">Сб</text>
+              </g>
+            </svg>
+          </div>
+        </section>
+
+        {/* BAR + DONUT */}
+        <section className="grid-3">
+          <div className="panel">
+            <h4>По классам</h4>
+            <div className="sub">Посещаемость за сегодня</div>
+            <div className="bars">
+              {props.classBarStats.map((bar) => (
+                <div key={bar.name} className={`bar-col ${bar.isBest ? 'best' : ''}`}>
+                  <div className="track">
+                    <div className="fill" style={{ height: `${bar.percentage}%` }} />
+                  </div>
+                  <div className="val">{bar.percentage}%</div>
+                  <div className="name">{bar.name}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="panel">
+            <h4>Структура отметок</h4>
+            <div className="sub">За последний месяц</div>
+            <div className="donut-wrap">
+              <svg width="112" height="112" viewBox="0 0 42 42">
+                <circle cx="21" cy="21" r="15.9" fill="transparent" stroke="#F0F0F2" strokeWidth="6.5" />
+                <circle
+                  cx="21"
+                  cy="21"
+                  r="15.9"
+                  fill="transparent"
+                  stroke="#30D158"
+                  strokeWidth="6.5"
+                  strokeLinecap="round"
+                  strokeDasharray={`${props.donutStats.presentPct} ${100 - props.donutStats.presentPct}`}
+                  strokeDashoffset="25"
+                />
+                <circle
+                  cx="21"
+                  cy="21"
+                  r="15.9"
+                  fill="transparent"
+                  stroke="#FF9F0A"
+                  strokeWidth="6.5"
+                  strokeLinecap="round"
+                  strokeDasharray={`${props.donutStats.latePct} ${100 - props.donutStats.latePct}`}
+                  strokeDashoffset={25 - props.donutStats.presentPct}
+                />
+                <circle
+                  cx="21"
+                  cy="21"
+                  r="15.9"
+                  fill="transparent"
+                  stroke="#FF453A"
+                  strokeWidth="6.5"
+                  strokeLinecap="round"
+                  strokeDasharray={`${props.donutStats.absentPct} ${100 - props.donutStats.absentPct}`}
+                  strokeDashoffset={25 - props.donutStats.presentPct - props.donutStats.latePct}
+                />
+              </svg>
+              <div className="donut-rows">
+                <div>
+                  <span className="sw" style={{ background: '#30D158' }} />
+                  Пришли<b>{props.donutStats.presentPct}%</b>
+                </div>
+                <div>
+                  <span className="sw" style={{ background: '#FF9F0A' }} />
+                  Опоздали<b>{props.donutStats.latePct}%</b>
+                </div>
+                <div>
+                  <span className="sw" style={{ background: '#FF453A' }} />
+                  Отсутствуют<b>{props.donutStats.absentPct}%</b>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* LOG */}
+        <section className="log-panel">
+          <h4 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px' }}>Последние записи</h4>
+          <div className="sub" style={{ fontSize: '12.5px', color: 'var(--text-2)', marginBottom: '6px' }}>
+            Журнал отметок по классам
+          </div>
+
+          {props.recentLogs.map((log, index) => {
+            const dateParts = log.date.split('-');
+            const displayDate = dateParts.length === 3 ? `${dateParts[2]}.${dateParts[1]}` : log.date;
+            
+            return (
+              <div key={`${log.class_id}-${log.date}`} className="log-row">
+                <div className="log-icon" style={{ background: LOG_GRADIENTS[index % LOG_GRADIENTS.length] }}>
+                  {log.class_name}
+                </div>
+                <div className="log-main">
+                  <div className="cls">{log.class_name} класс</div>
+                  <div className="who">{log.teacher_name}</div>
+                </div>
+                <div className="log-breakdown">
+                  <span><span className="sw" style={{ background: '#30D158' }} />{log.present_count}</span>
+                  <span><span className="sw" style={{ background: '#FF9F0A' }} />{log.late_count}</span>
+                  <span><span className="sw" style={{ background: '#FF453A' }} />{log.absent_count}</span>
+                </div>
+                <div className="log-date">{displayDate}</div>
+              </div>
+            );
+          })}
+          {props.recentLogs.length === 0 && (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-2)', fontSize: '14px' }}>
+              Нет записей
+            </div>
+          )}
+        </section>
+      </main>
+
+      {/* MODAL */}
+      <div
+        className={`overlay ${isModalOpen ? 'open' : ''}`}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setIsModalOpen(false);
+        }}
+      >
+        <div className="modal">
+          <div className="modal-head">
+            <div>
+              <h3>Отметить учеников</h3>
+              <div className="sub">{activeClass?.name || 'Класс'} · {capitalizedDate}</div>
+            </div>
+            <button className="modal-close" onClick={() => setIsModalOpen(false)}>
+              ×
+            </button>
+          </div>
+
+          <div className="modal-body">
+            {isLoadingStudents ? (
+              <div style={{ padding: '20px', textAlign: 'center' }}>Загрузка учеников...</div>
+            ) : students.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center' }}>Нет учеников в классе</div>
+            ) : (
+              students.map((student, idx) => (
+                <div key={student.id} className="roster-row">
+                  <span className="roll">{idx + 1}</span>
+                  <span className="fio">{student.full_name}</span>
+                  <div className="seg">
+                    <button
+                      className={student.status === 'present' ? 'sel present' : ''}
+                      onClick={() => handleStatusChange(student.id, 'present')}
+                    >
+                      Пришёл
+                    </button>
+                    <button
+                      className={student.status === 'late' ? 'sel late' : ''}
+                      onClick={() => handleStatusChange(student.id, 'late')}
+                    >
+                      Опоздал
+                    </button>
+                    <button
+                      className={student.status === 'absent' ? 'sel absent' : ''}
+                      onClick={() => handleStatusChange(student.id, 'absent')}
+                    >
+                      Нет
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="modal-foot">
+            <button className="btn-cancel" onClick={() => setIsModalOpen(false)}>
+              Отмена
+            </button>
+            <button className="btn-save" onClick={handleSaveMarks} disabled={isLoadingStudents}>
+              Сохранить отметки
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* TOAST */}
+      <div className={`toast ${isToastVisible ? 'show' : ''}`}>
+        Отметки за {activeClass?.name || 'класс'} сохранены
+      </div>
+    </div>
+  );
+}
