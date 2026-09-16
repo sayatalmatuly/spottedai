@@ -5,14 +5,25 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { saveAttendance } from '@/app/actions';
-import type { ClassInfo, DashboardStats, ClassBarStat, LogEntry, AttendanceStatus, StudentWithStatus } from '@/lib/types';
+import type {
+  AttendanceInsight,
+  AttendanceStatus,
+  ClassBarStat,
+  ClassInfo,
+  DashboardStats,
+  LogEntry,
+  StudentWithStatus,
+  WeeklyTrend,
+} from '@/lib/types';
 import './AttendanceDashboard.css';
 
 interface DashboardProps {
   classes: ClassInfo[];
   stats: DashboardStats;
   classBarStats: ClassBarStat[];
-  donutStats: { presentPct: number; latePct: number; absentPct: number };
+  donutStats: { presentPct: number; latePct: number; absentPct: number; total: number };
+  weeklyTrend: WeeklyTrend;
+  attendanceInsights: AttendanceInsight[];
   recentLogs: LogEntry[];
   teacherName: string;
   teacherInitials: string;
@@ -131,6 +142,33 @@ export default function AttendanceDashboard(props: DashboardProps) {
     year: 'numeric' 
   });
   const capitalizedDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+
+  const formatPercentage = (value: number) => (
+    Number.isInteger(value) ? String(value) : value.toFixed(1)
+  );
+  const trendPoints = props.weeklyTrend.points.map((point, index, points) => ({
+    ...point,
+    x: points.length === 1 ? 150 : 8 + (284 * index) / (points.length - 1),
+    y: point.percentage === null ? null : 12 + ((100 - point.percentage) * 0.78),
+  }));
+  const trendSegments: typeof trendPoints[] = [];
+  let currentTrendSegment: typeof trendPoints = [];
+  for (const point of trendPoints) {
+    if (point.y === null) {
+      if (currentTrendSegment.length > 0) trendSegments.push(currentTrendSegment);
+      currentTrendSegment = [];
+    } else {
+      currentTrendSegment.push(point);
+    }
+  }
+  if (currentTrendSegment.length > 0) trendSegments.push(currentTrendSegment);
+  const trendChange = props.weeklyTrend.changePp;
+  const trendPillText = trendChange === null
+    ? 'Нет сравнения'
+    : `${trendChange > 0 ? '+' : ''}${formatPercentage(trendChange)} п.п.`;
+  const trendPillClass = trendChange === null || trendChange === 0
+    ? 'neutral'
+    : trendChange < 0 ? 'down' : '';
 
   return (
     <div className="shell">
@@ -379,31 +417,25 @@ export default function AttendanceDashboard(props: DashboardProps) {
               </div>
               <h4>ИИ-аналитика</h4>
             </div>
-            <div className="insight">
-              <span className="dot risk" />
-              <p><b>Смирнов К., 6Б</b> — три пропуска подряд. Стоит связаться с родителями.</p>
-            </div>
-            <div className="insight">
-              <span className="dot watch" />
-              <p>По понедельникам опозданий на <b>18% больше</b>, чем в среднем за неделю.</p>
-            </div>
-            <div className="insight">
-              <span className="dot good" />
-              <p><b>7Б</b> держит лучшую посещаемость за месяц — 97%, уже третью неделю подряд.</p>
-            </div>
-            <div className="insight">
-              <span className="dot watch" />
-              <p>В пятницу посещаемость может снизиться на 4–6%, как и в предыдущие пятницы месяца.</p>
-            </div>
+            {props.attendanceInsights.map((insight, index) => (
+              <div key={`${insight.tone}-${index}`} className="insight">
+                <span className={`dot ${insight.tone}`} />
+                <p>{insight.text}</p>
+              </div>
+            ))}
           </div>
 
           <div className="panel trend-wrap">
             <div className="trend-top">
               <div>
-                <div className="big">93.7%</div>
+                <div className="big">
+                  {props.weeklyTrend.averagePct === null
+                    ? '—'
+                    : `${formatPercentage(props.weeklyTrend.averagePct)}%`}
+                </div>
                 <div className="cap">Средняя посещаемость за неделю</div>
               </div>
-              <div className="trend-pill">+2.1%</div>
+              <div className={`trend-pill ${trendPillClass}`}>{trendPillText}</div>
             </div>
             <svg viewBox="0 0 300 120" preserveAspectRatio="none">
               <defs>
@@ -415,25 +447,52 @@ export default function AttendanceDashboard(props: DashboardProps) {
               <line x1="0" y1="20" x2="300" y2="20" stroke="rgba(0,0,0,.06)" strokeWidth="1" />
               <line x1="0" y1="55" x2="300" y2="55" stroke="rgba(0,0,0,.06)" strokeWidth="1" />
               <line x1="0" y1="90" x2="300" y2="90" stroke="rgba(0,0,0,.06)" strokeWidth="1" />
-              <path
-                d="M8,55 C35,20 55,20 80,38 C105,55 120,10 155,14 C185,17 195,62 225,50 C250,40 265,55 292,32 L292,110 L8,110 Z"
-                fill="url(#areaFill)"
-              />
-              <path
-                d="M8,55 C35,20 55,20 80,38 C105,55 120,10 155,14 C185,17 195,62 225,50 C250,40 265,55 292,32"
-                fill="none"
-                stroke="#0071E3"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-              <circle cx="292" cy="32" r="4.5" fill="#fff" stroke="#0071E3" strokeWidth="2.5" />
+              {trendSegments.map((segment, index) => {
+                const linePath = segment
+                  .map((point, pointIndex) => `${pointIndex === 0 ? 'M' : 'L'}${point.x},${point.y}`)
+                  .join(' ');
+                const firstPoint = segment[0];
+                const lastPoint = segment[segment.length - 1];
+                const areaPath = `${linePath} L${lastPoint.x},100 L${firstPoint.x},100 Z`;
+
+                return (
+                  <g key={`segment-${index}`}>
+                    <path d={areaPath} fill="url(#areaFill)" />
+                    <path
+                      d={linePath}
+                      fill="none"
+                      stroke="#0071E3"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </g>
+                );
+              })}
+              {trendPoints.filter((point) => point.y !== null).map((point) => (
+                <circle
+                  key={point.date}
+                  cx={point.x}
+                  cy={point.y!}
+                  r="3.5"
+                  fill="#fff"
+                  stroke="#0071E3"
+                  strokeWidth="2"
+                >
+                  <title>{`${point.label}: ${formatPercentage(point.percentage!)}%`}</title>
+                </circle>
+              ))}
+              {trendSegments.length === 0 && (
+                <text x="150" y="55" textAnchor="middle" fontSize="10" fill="#AEAEB2">
+                  Нет отметок за выбранные дни
+                </text>
+              )}
               <g fontSize="9" fill="#AEAEB2">
-                <text x="4" y="120">Пн</text>
-                <text x="52" y="120">Вт</text>
-                <text x="100" y="120">Ср</text>
-                <text x="148" y="120">Чт</text>
-                <text x="196" y="120">Пт</text>
-                <text x="270" y="120">Сб</text>
+                {trendPoints.map((point) => (
+                  <text key={point.date} x={point.x} y="120" textAnchor="middle">
+                    {point.label}
+                  </text>
+                ))}
               </g>
             </svg>
           </div>
@@ -444,14 +503,23 @@ export default function AttendanceDashboard(props: DashboardProps) {
           <div className="panel">
             <h4>По классам</h4>
             <div className="sub">Посещаемость за сегодня</div>
-            <div className="bars">
+            <div
+              className="attendance-class-bars"
+              aria-label="Посещаемость по классам"
+            >
               {props.classBarStats.map((bar) => (
-                <div key={bar.name} className={`bar-col ${bar.isBest ? 'best' : ''}`}>
-                  <div className="track">
-                    <div className="fill" style={{ height: `${bar.percentage}%` }} />
+                <div
+                  key={bar.name}
+                  className={`attendance-class-bar ${bar.isBest ? 'best' : ''}`}
+                  title={bar.markedCount === 0 ? 'Сегодня отметок нет' : `${bar.percentage}% из ${bar.markedCount} отметок`}
+                >
+                  <div className="attendance-class-track">
+                    <div className="attendance-class-fill" style={{ height: `${bar.percentage || 0}%` }} />
                   </div>
-                  <div className="val">{bar.percentage}%</div>
-                  <div className="name">{bar.name}</div>
+                  <div className="attendance-class-value">
+                    {bar.percentage === null ? '—' : `${bar.percentage}%`}
+                  </div>
+                  <div className="attendance-class-name">{bar.name}</div>
                 </div>
               ))}
             </div>
@@ -510,6 +578,9 @@ export default function AttendanceDashboard(props: DashboardProps) {
                   <span className="sw" style={{ background: '#FF453A' }} />
                   Отсутствуют<b>{props.donutStats.absentPct}%</b>
                 </div>
+                {props.donutStats.total === 0 && (
+                  <div className="donut-empty">Нет отметок за период</div>
+                )}
               </div>
             </div>
           </div>

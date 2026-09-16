@@ -1,0 +1,251 @@
+/* admin.css */
+.admin-shell {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text);
+}
+
+.admin-sidebar {
+  width: 264px;
+  background-color: var(--panel);
+  border-right: 1px solid var(--divider);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+
+.admin-brand {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 32px;
+  padding: 0 12px;
+}
+
+.admin-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-nav-item {
+  display: block;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.admin-nav-item:hover {
+  background-color: var(--bg);
+}
+
+.admin-nav-item.active {
+  background-color: var(--blue-soft);
+  color: var(--blue);
+}
+
+.admin-user-info {
+  margin-top: auto;
+  padding: 16px 12px 0;
+  border-top: 1px solid var(--divider);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-user-name {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.admin-main {
+  flex: 1;
+  padding: 32px 48px;
+  overflow-y: auto;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.admin-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.admin-card {
+  background-color: var(--panel);
+  border-radius: var(--r-md);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.admin-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.admin-card-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table th, .admin-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--divider);
+}
+
+.admin-table th {
+  color: var(--text-2);
+  font-weight: 500;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.admin-table tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.admin-btn-primary {
+  background-color: var(--blue);
+  color: white;
+}
+.admin-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.admin-btn-secondary {
+  background-color: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--divider);
+}
+.admin-btn-secondary:hover {
+  background-color: var(--divider);
+}
+
+.admin-btn-danger {
+  background-color: var(--red-soft);
+  color: var(--red);
+}
+.admin-btn-danger:hover {
+  background-color: rgba(255,69,58,0.2);
+}
+
+.admin-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background-color: var(--bg);
+}
+.admin-badge.role-admin {
+  background-color: var(--orange-soft);
+  color: var(--orange);
+}
+.admin-badge.role-teacher {
+  background-color: var(--green-soft);
+  color: var(--green);
+}
+
+.admin-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.admin-modal {
+  background: var(--panel);
+  border-radius: var(--r-lg);
+  padding: 32px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 16px 32px rgba(0,0,0,0.1);
+}
+
+.admin-modal-title {
+  margin-top: 0;
+  margin-bottom: 24px;
+  font-size: 20px;
+}
+
+.admin-form-group {
+  margin-bottom: 16px;
+}
+
+.admin-form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.admin-input, .admin-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  box-sizing: border-box;
+  background-color: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.admin-input:focus, .admin-select:focus {
+  border-color: var(--blue);
+  background-color: var(--panel);
+}
+
+.admin-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.admin-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-2);
+}

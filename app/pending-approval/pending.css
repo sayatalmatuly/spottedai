@@ -1,0 +1,80 @@
+.pending-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #F5F5F7;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+.pending-card {
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04), 0 10px 24px rgba(0, 0, 0, 0.06);
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 440px;
+  text-align: center;
+}
+
+.pending-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255, 159, 10, 0.14);
+  color: #FF9F0A;
+  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.pending-card h1 {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 8px;
+  color: #1D1D1F;
+}
+
+.pending-card p {
+  font-size: 14px;
+  color: #6E6E73;
+  line-height: 1.55;
+  margin: 0 0 24px;
+}
+
+.pending-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-check-status {
+  background: #0071E3;
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 12px 24px;
+  border-radius: 980px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-check-status:hover {
+  background: #0077ED;
+}
+
+.btn-pending-logout {
+  background: rgba(120, 120, 128, 0.12);
+  color: #1D1D1F;
+  border: none;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 12px 24px;
+  border-radius: 980px;
+  cursor: pointer;
+}
+
