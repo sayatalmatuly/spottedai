@@ -1,8 +1,17 @@
 import '../navigation.css';
 
+export function LoadingSpinner({ label = 'Загрузка' }: { label?: string }) {
+  return (
+    <span className="loading-spinner" role="status" aria-label={label}>
+      <span className="loading-spinner-ring" aria-hidden="true" />
+    </span>
+  );
+}
+
 export function AdminPageLoading() {
   return (
     <div className="route-loading admin-route-loading" aria-busy="true" aria-label="Загрузка">
+      <LoadingSpinner />
       <div className="route-loading-header skeleton-block" />
       <div className="route-loading-card skeleton-block" />
       <div className="route-loading-card skeleton-block short" />
@@ -13,6 +22,7 @@ export function AdminPageLoading() {
 export function DashboardPageLoading() {
   return (
     <div className="route-loading dashboard-route-loading shell" aria-busy="true" aria-label="Загрузка">
+      <div className="route-loading-spinner"><LoadingSpinner /></div>
       <aside className="sidebar">
         <div className="skeleton-block" style={{ height: 48, marginBottom: 24 }} />
         <div className="skeleton-block" style={{ height: 14, width: '40%', marginBottom: 12 }} />
@@ -36,6 +46,7 @@ export function DashboardPageLoading() {
 export function ProfilePageLoading() {
   return (
     <div className="route-loading profile-route-loading" aria-busy="true" aria-label="Загрузка">
+      <LoadingSpinner />
       <div className="skeleton-block" style={{ height: 20, width: 160, marginBottom: 24 }} />
       <div className="route-loading-profile-card skeleton-block" />
     </div>

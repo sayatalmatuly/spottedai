@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { requestTeacherRegistration } from './actions';
 import './login.css';
 
 export default function LoginPage() {
@@ -23,7 +24,7 @@ export default function LoginPage() {
     setLoading(true);
 
     if (mode === 'login') {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -38,31 +39,54 @@ export default function LoginPage() {
         return;
       }
 
-      router.push('/');
-      router.refresh();
-    } else {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            role: 'TEACHER',
-          },
-        },
-      });
+      // Проверяем статус профиля до того, как пустить пользователя дальше.
+      // Пользователи со статусом PENDING (кроме админов) не должны попадать
+      // в приложение — сразу разлогиниваем их и показываем причину.
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, status')
+        .eq('id', signInData.user.id)
+        .single();
 
-      if (error) {
-        setError(error.message);
+      const isAdmin = profile?.role === 'ADMIN';
+
+      if (profile && profile.status === 'PENDING' && !isAdmin) {
+        await supabase.auth.signOut();
+        setError('Ваш аккаунт ещё не одобрен администратором. Дождитесь подтверждения.');
         setLoading(false);
         return;
       }
 
-      if (data.session) {
-        router.push('/');
+      router.push('/');
+      router.refresh();
+    } else {
+      let result;
+      try {
+        result = await requestTeacherRegistration({ fullName, email, password });
+      } catch (registrationError) {
+        console.error(registrationError);
+        setError('Не удалось отправить заявку. Попробуйте ещё раз.');
+        setLoading(false);
+        return;
+      }
+
+      if (result.error) {
+        setError(result.error);
+        setLoading(false);
+        return;
+      }
+
+      if (result.sessionCreated) {
+        router.push('/pending-approval');
         router.refresh();
       } else {
-        setSuccess('Регистрация прошла успешно! Теперь вы можете войти.');
+        setMode('login');
+        setPassword('');
+        setSuccess(
+          result.notificationSent
+            ? 'Заявка отправлена администратору. После подтверждения вы сможете войти.'
+            : 'Заявка создана. Администратору не удалось отправить уведомление — сообщите ему о заявке.'
+        );
         setLoading(false);
       }
     }

@@ -2,6 +2,7 @@ export type UserRole = 'ADMIN' | 'TEACHER';
 export type UserStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export type AttendanceStatus = 'present' | 'late' | 'absent';
+export type AbsenceReason = 'sick' | 'excused' | 'valid' | 'unexcused';
 
 export interface Profile {
   id: string;
@@ -27,6 +28,7 @@ export interface Student {
 
 export interface StudentWithStatus extends Student {
   status: AttendanceStatus;
+  absence_reason?: AbsenceReason | null;
 }
 
 export interface ScheduleEntry {
@@ -46,6 +48,7 @@ export interface AttendanceLog {
   class_id: string;
   date: string;
   status: AttendanceStatus;
+  absence_reason?: AbsenceReason | null;
   marked_by: string;
   created_at: string;
   student?: Student;

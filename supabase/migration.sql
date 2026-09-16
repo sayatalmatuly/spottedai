@@ -93,6 +93,7 @@ CREATE TABLE public.attendance_logs (
   class_id UUID NOT NULL REFERENCES public.classes(id) ON DELETE CASCADE,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   status public.attendance_status NOT NULL DEFAULT 'present',
+  absence_reason TEXT CHECK (absence_reason IN ('sick', 'excused', 'valid', 'unexcused')),
   marked_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (student_id, date)

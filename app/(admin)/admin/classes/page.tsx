@@ -4,15 +4,20 @@ import ClassesClient from './ClassesClient';
 export default async function ClassesPage() {
   const supabase = await createClient();
   
-  const { data: classes } = await supabase
-    .from('classes')
-    .select(`*, teacher:profiles(id, full_name)`)
-    .order('name');
-    
-  const { data: students } = await supabase
-    .from('students')
-    .select('*')
-    .order('full_name');
+  const [classesResult, studentsResult] = await Promise.all([
+    supabase
+      .from('classes')
+      .select('id, name, teacher_id, teacher:profiles(id, full_name)')
+      .order('name'),
+    supabase
+      .from('students')
+      .select('id, full_name, class_id')
+      .order('full_name'),
+  ]);
+  const classes = (classesResult.data || []).map((classInfo: any) => ({
+    ...classInfo,
+    teacher: Array.isArray(classInfo.teacher) ? classInfo.teacher[0] || null : classInfo.teacher,
+  }));
 
   return (
     <div>
@@ -20,8 +25,8 @@ export default async function ClassesPage() {
         <h1 className="admin-title">Классы</h1>
       </div>
       <ClassesClient 
-        initialClasses={classes || []} 
-        allStudents={students || []} 
+        initialClasses={classes}
+        allStudents={studentsResult.data || []}
       />
     </div>
   );

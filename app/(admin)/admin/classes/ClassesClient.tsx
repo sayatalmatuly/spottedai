@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { addClass, deleteClass, addStudent, deleteStudent } from './actions';
 import { Student } from '@/lib/types';
 
@@ -21,6 +21,15 @@ export default function ClassesClient({
 }) {
   const [isAddClassModalOpen, setIsAddClassModalOpen] = useState(false);
   const [expandedClassId, setExpandedClassId] = useState<string | null>(null);
+  const studentsByClass = useMemo(() => {
+    const result = new Map<string, Student[]>();
+    for (const student of allStudents) {
+      const students = result.get(student.class_id) || [];
+      students.push(student);
+      result.set(student.class_id, students);
+    }
+    return result;
+  }, [allStudents]);
 
   const toggleClass = (id: string) => {
     setExpandedClassId(prev => prev === id ? null : id);
@@ -41,7 +50,7 @@ export default function ClassesClient({
           </div>
         ) : (
           initialClasses.map(cls => {
-            const classStudents = allStudents.filter(s => s.class_id === cls.id);
+            const classStudents = studentsByClass.get(cls.id) || [];
             const isExpanded = expandedClassId === cls.id;
             
             return (

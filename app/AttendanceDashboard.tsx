@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { saveAttendance } from '@/app/actions';
 import type {
   AttendanceInsight,
+  AbsenceReason,
   AttendanceStatus,
   ClassBarStat,
   ClassInfo,
@@ -36,6 +37,7 @@ interface DashboardProps {
   unmarkedClasses: ClassInfo[];
   markedCount: number;
   today: string;
+  heroAttendanceText: string;
 }
 
 const LOG_GRADIENTS = [
@@ -43,6 +45,13 @@ const LOG_GRADIENTS = [
   'linear-gradient(155deg,#FF9F0A,#FF453A)',
   'linear-gradient(155deg,#8E5CFF,#0071E3)',
   'linear-gradient(155deg,#30D158,#00B37D)'
+];
+
+const ABSENCE_REASON_OPTIONS: { value: AbsenceReason; short: string; label: string }[] = [
+  { value: 'sick', short: 'Б', label: 'Болеет' },
+  { value: 'excused', short: 'О', label: 'Отпросился' },
+  { value: 'valid', short: 'У', label: 'Уважительная причина' },
+  { value: 'unexcused', short: 'Н', label: 'Не пришёл' },
 ];
 
 export default function AttendanceDashboard(props: DashboardProps) {
@@ -55,6 +64,10 @@ export default function AttendanceDashboard(props: DashboardProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
   const [students, setStudents] = useState<StudentWithStatus[]>([]);
   const [isLoadingStudents, setIsLoadingStudents] = useState<boolean>(false);
+  const [isSavingMarks, setIsSavingMarks] = useState<boolean>(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -63,6 +76,12 @@ export default function AttendanceDashboard(props: DashboardProps) {
   };
 
   const activeClass = props.classes.find(c => c.id === activeClassId);
+
+  const handleClassSelect = (classId: string) => {
+    setActiveClassId(classId);
+    setAiSummary(null);
+    setAiError(null);
+  };
 
   useEffect(() => {
     if (!activeClassId && props.classes.length > 0) {
@@ -74,28 +93,38 @@ export default function AttendanceDashboard(props: DashboardProps) {
     if (!activeClassId) return;
     setIsLoadingStudents(true);
     try {
-      const { data: studentsData } = await supabase
-        .from('students')
-        .select('*')
-        .eq('class_id', activeClassId)
-        .order('full_name');
+      const [studentsResult, logsResult] = await Promise.all([
+        supabase
+          .from('students')
+          .select('id, full_name, class_id')
+          .eq('class_id', activeClassId)
+          .order('full_name'),
+        supabase
+          .from('attendance_logs')
+          .select('student_id, status, absence_reason')
+          .eq('class_id', activeClassId)
+          .eq('date', props.today),
+      ]);
+      const studentsData = studentsResult.data;
+      const logsData = logsResult.data;
 
-      const { data: logsData } = await supabase
-        .from('attendance_logs')
-        .select('student_id, status')
-        .eq('class_id', activeClassId)
-        .eq('date', props.today);
-
-      const logsMap = new Map<string, AttendanceStatus>();
+      const logsMap = new Map<string, { status: AttendanceStatus; absenceReason: AbsenceReason | null }>();
       if (logsData) {
-        logsData.forEach(l => logsMap.set(l.student_id, l.status));
+        logsData.forEach((log) => logsMap.set(log.student_id, {
+          status: log.status,
+          absenceReason: log.absence_reason as AbsenceReason | null,
+        }));
       }
 
       if (studentsData) {
-        const studentsWithStatus = studentsData.map(s => ({
-          ...s,
-          status: logsMap.get(s.id) || 'present' // default to present
-        })) as StudentWithStatus[];
+        const studentsWithStatus = studentsData.map((student) => {
+          const mark = logsMap.get(student.id);
+          return {
+            ...student,
+            status: mark?.status || 'present',
+            absence_reason: mark?.status === 'absent' ? mark.absenceReason || 'unexcused' : null,
+          };
+        }) as StudentWithStatus[];
         setStudents(studentsWithStatus);
       }
     } catch (e) {
@@ -110,16 +139,69 @@ export default function AttendanceDashboard(props: DashboardProps) {
     loadStudentsForModal();
   };
 
+  const handleGenerateAiSummary = async () => {
+    if (!activeClassId) return;
+    setIsAiLoading(true);
+    setAiError(null);
+    setAiSummary(null);
+
+    try {
+      const dateFromObj = new Date(props.today);
+      dateFromObj.setUTCDate(dateFromObj.getUTCDate() - 29);
+      const dateFrom = dateFromObj.toISOString().slice(0, 10);
+
+      const res = await fetch('/api/ai/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ classId: activeClassId, dateFrom, dateTo: props.today }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setAiError(data.error || 'Не удалось получить анализ');
+        return;
+      }
+
+      setAiSummary(data.summary);
+    } catch (e) {
+      setAiError('Не удалось связаться с сервером');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
   const handleStatusChange = (id: string, status: AttendanceStatus) => {
     setStudents((prev) =>
-      prev.map((student) => (student.id === id ? { ...student, status } : student))
+      prev.map((student) => (
+        student.id === id
+          ? {
+              ...student,
+              status,
+              absence_reason: status === 'absent' ? student.absence_reason || 'unexcused' : null,
+            }
+          : student
+      ))
+    );
+  };
+
+  const handleAbsenceReasonChange = (id: string, absenceReason: AbsenceReason) => {
+    setStudents((prev) =>
+      prev.map((student) => (
+        student.id === id ? { ...student, status: 'absent', absence_reason: absenceReason } : student
+      ))
     );
   };
 
   const handleSaveMarks = async () => {
     if (!activeClassId) return;
+    setIsSavingMarks(true);
     try {
-      const marks = students.map(s => ({ studentId: s.id, status: s.status }));
+      const marks = students.map((student) => ({
+        studentId: student.id,
+        status: student.status,
+        absenceReason: student.absence_reason,
+      }));
       await saveAttendance(activeClassId, props.today, marks);
       
       setIsModalOpen(false);
@@ -132,6 +214,8 @@ export default function AttendanceDashboard(props: DashboardProps) {
     } catch (e) {
       console.error(e);
       alert('Failed to save attendance');
+    } finally {
+      setIsSavingMarks(false);
     }
   };
 
@@ -187,7 +271,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
             <li key={item.id}>
               <div
                 className={`side-item ${activeClassId === item.id ? 'active' : ''}`}
-                onClick={() => setActiveClassId(item.id)}
+                onClick={() => handleClassSelect(item.id)}
               >
                 {item.name}
                 {props.unmarkedClasses.some(c => c.id === item.id) && <span className="chip" />}
@@ -329,7 +413,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
           </div>
 
           <div className="hero-copy">
-            <h3>Посещаемость стабильна третью неделю подряд</h3>
+            <h3>{props.heroAttendanceText}</h3>
             <p>
               {props.stats.total} учеников на учёте · отметки внесены по {props.markedCount} классам из {props.classes.length}. 
               {props.unmarkedClasses.length > 0 && ` Классу ${props.unmarkedClasses.map(c => c.name).join(', ')} ещё нужно отметить сегодняшний день.`}
@@ -423,6 +507,37 @@ export default function AttendanceDashboard(props: DashboardProps) {
                 <p>{insight.text}</p>
               </div>
             ))}
+
+            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+              <button
+                type="button"
+                onClick={handleGenerateAiSummary}
+                disabled={isAiLoading || !activeClassId}
+                style={{
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: 'var(--brand, #0071E3)',
+                  color: '#fff',
+                  cursor: isAiLoading ? 'default' : 'pointer',
+                  opacity: isAiLoading ? 0.6 : 1,
+                }}
+              >
+                {isAiLoading ? 'Анализирую…' : `Обзор по ${activeClass?.name || 'классу'} (30 дней)`}
+              </button>
+
+              {aiError && (
+                <p style={{ color: 'var(--red)', fontSize: '13px', marginTop: '8px' }}>{aiError}</p>
+              )}
+
+              {aiSummary && (
+                <p style={{ fontSize: '13.5px', lineHeight: 1.5, marginTop: '10px', color: 'var(--text-2)' }}>
+                  {aiSummary}
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="panel trend-wrap">
@@ -643,7 +758,10 @@ export default function AttendanceDashboard(props: DashboardProps) {
 
           <div className="modal-body">
             {isLoadingStudents ? (
-              <div style={{ padding: '20px', textAlign: 'center' }}>Загрузка учеников...</div>
+              <div className="modal-loading" role="status">
+                <span className="modal-loading-spinner" aria-hidden="true" />
+                Загрузка учеников...
+              </div>
             ) : students.length === 0 ? (
               <div style={{ padding: '20px', textAlign: 'center' }}>Нет учеников в классе</div>
             ) : (
@@ -651,25 +769,47 @@ export default function AttendanceDashboard(props: DashboardProps) {
                 <div key={student.id} className="roster-row">
                   <span className="roll">{idx + 1}</span>
                   <span className="fio">{student.full_name}</span>
-                  <div className="seg">
-                    <button
-                      className={student.status === 'present' ? 'sel present' : ''}
-                      onClick={() => handleStatusChange(student.id, 'present')}
+                  <div className="attendance-status-control">
+                    <div
+                      className={`absence-options ${student.status === 'absent' ? 'open' : ''}`}
+                      role="group"
+                      aria-label={`Причина отсутствия: ${student.full_name}`}
+                      aria-hidden={student.status !== 'absent'}
                     >
-                      Пришёл
-                    </button>
-                    <button
-                      className={student.status === 'late' ? 'sel late' : ''}
-                      onClick={() => handleStatusChange(student.id, 'late')}
-                    >
-                      Опоздал
-                    </button>
-                    <button
-                      className={student.status === 'absent' ? 'sel absent' : ''}
-                      onClick={() => handleStatusChange(student.id, 'absent')}
-                    >
-                      Нет
-                    </button>
+                      {ABSENCE_REASON_OPTIONS.map((reason) => (
+                        <button
+                          key={reason.value}
+                          type="button"
+                          className={student.absence_reason === reason.value ? 'selected' : ''}
+                          onClick={() => handleAbsenceReasonChange(student.id, reason.value)}
+                          title={reason.label}
+                          aria-label={reason.label}
+                          tabIndex={student.status === 'absent' ? 0 : -1}
+                        >
+                          {reason.short}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="seg">
+                      <button
+                        className={student.status === 'present' ? 'sel present' : ''}
+                        onClick={() => handleStatusChange(student.id, 'present')}
+                      >
+                        Пришёл
+                      </button>
+                      <button
+                        className={student.status === 'late' ? 'sel late' : ''}
+                        onClick={() => handleStatusChange(student.id, 'late')}
+                      >
+                        Опоздал
+                      </button>
+                      <button
+                        className={student.status === 'absent' ? 'sel absent' : ''}
+                        onClick={() => handleStatusChange(student.id, 'absent')}
+                      >
+                        Нет
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))
@@ -680,8 +820,8 @@ export default function AttendanceDashboard(props: DashboardProps) {
             <button className="btn-cancel" onClick={() => setIsModalOpen(false)}>
               Отмена
             </button>
-            <button className="btn-save" onClick={handleSaveMarks} disabled={isLoadingStudents}>
-              Сохранить отметки
+            <button className="btn-save" onClick={handleSaveMarks} disabled={isLoadingStudents || isSavingMarks}>
+              {isSavingMarks ? 'Сохраняю...' : 'Сохранить отметки'}
             </button>
           </div>
         </div>

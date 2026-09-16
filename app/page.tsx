@@ -14,6 +14,7 @@ import type {
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 1000;
+const SCHOOL_DAYS_PER_WEEK = 5;
 const WEEKDAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const WEEKDAY_DATIVE = [
   'воскресеньям',
@@ -33,13 +34,16 @@ type StatusTotals = {
 };
 
 type DashboardAttendanceRow = {
-  id: string;
   student_id: string;
   class_id: string;
   date: string;
   status: AttendanceStatus;
-  student: { full_name: string } | null;
-  class: { name: string } | null;
+};
+
+type StudentDirectoryRow = {
+  id: string;
+  full_name: string;
+  class_id: string;
 };
 
 function createTotals(): StatusTotals {
@@ -85,8 +89,8 @@ function getSchoolDaysEndingOn(endDate: string, count: number) {
   const current = dateFromKey(endDate);
 
   while (dates.length < count) {
-    // The schedule supports Monday through Saturday; Sunday has no lessons.
-    if (current.getUTCDay() !== 0) dates.unshift(dateKey(current));
+    // The school uses a five-day schedule: Monday through Friday.
+    if (current.getUTCDay() >= 1 && current.getUTCDay() <= 5) dates.unshift(dateKey(current));
     current.setUTCDate(current.getUTCDate() - 1);
   }
 
@@ -99,7 +103,7 @@ function getSchoolDaysBetween(startDate: string, endDate: string) {
   const current = dateFromKey(startDate);
 
   while (current <= end) {
-    if (current.getUTCDay() !== 0) dates.push(dateKey(current));
+    if (current.getUTCDay() >= 1 && current.getUTCDay() <= 5) dates.push(dateKey(current));
     current.setUTCDate(current.getUTCDate() + 1);
   }
 
@@ -115,61 +119,21 @@ function pluralizeAbsence(count: number) {
   return 'пропусков';
 }
 
-export default async function DashboardPage() {
-  const supabase = await createClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  let teacherName = 'Учитель';
-  let teacherInitials = 'У';
-  let userRole: 'ADMIN' | 'TEACHER' = 'TEACHER';
-  const userEmail = user?.email || '';
-
-  if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name, role')
-      .eq('id', user.id)
-      .single();
-
-    if (profile) {
-      teacherName = profile.full_name;
-      userRole = isAdminRole(profile.role) ? 'ADMIN' : 'TEACHER';
-      teacherInitials = profile.full_name
-        .split(' ')
-        .map((part: string) => part[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase();
-    }
-  }
-
-  const { data: classesRaw } = await supabase
-    .from('classes')
-    .select('*, teacher:profiles(full_name)')
-    .order('name');
-
-  const classes: ClassInfo[] = (classesRaw || []).map((classRow: any) => ({
-    id: classRow.id,
-    name: classRow.name,
-    teacher_id: classRow.teacher_id,
-    student_count: classRow.student_count,
-  }));
-
-  const today = dateKey(new Date());
-  const monthStart = shiftDate(today, -29);
-  const weeklyDates = getSchoolDaysEndingOn(today, 6);
-  const previousWeeklyDates = getSchoolDaysEndingOn(shiftDate(weeklyDates[0], -1), 6);
-  const analyticsStart = monthStart < previousWeeklyDates[0] ? monthStart : previousWeeklyDates[0];
-
-  // Supabase limits a single response to 1,000 rows. Paginating is essential here:
-  // one marked day can already contain more records than that.
+async function loadAttendanceRows(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  dateFrom: string,
+  dateTo: string
+) {
   const attendanceRows: DashboardAttendanceRow[] = [];
+
+  // Supabase limits a single response to 1,000 rows. Keep pagination, but
+  // request only columns used by the dashboard to reduce transfer size.
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from('attendance_logs')
-      .select('id, student_id, class_id, date, status, student:students(full_name), class:classes(name)')
-      .gte('date', analyticsStart)
-      .lte('date', today)
+      .select('student_id, class_id, date, status')
+      .gte('date', dateFrom)
+      .lte('date', dateTo)
       .order('date', { ascending: false })
       .order('id', { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
@@ -184,9 +148,111 @@ export default async function DashboardPage() {
     if (page.length < PAGE_SIZE) break;
   }
 
-  const { count: totalStudents } = await supabase
+  return attendanceRows;
+}
+
+async function loadStudentDirectory(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const students: StudentDirectoryRow[] = [];
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('students')
+      .select('id, full_name, class_id')
+      .order('id')
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) {
+      console.error('Could not load student directory:', error.message);
+      break;
+    }
+
+    const page = (data || []) as StudentDirectoryRow[];
+    students.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+
+  return students;
+}
+
+export default async function DashboardPage() {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const today = dateKey(new Date());
+  const monthStart = shiftDate(today, -29);
+  const weeklyDates = getSchoolDaysEndingOn(today, SCHOOL_DAYS_PER_WEEK);
+  const previousWeeklyDates = getSchoolDaysEndingOn(shiftDate(weeklyDates[0], -1), SCHOOL_DAYS_PER_WEEK);
+  const analyticsStart = monthStart < previousWeeklyDates[0] ? monthStart : previousWeeklyDates[0];
+
+  // These reads do not depend on one another. Starting them together avoids
+  // making dashboard loading time the sum of several network round trips.
+  const profilePromise = user
+    ? supabase
+        .from('profiles')
+        .select('full_name, role')
+        .eq('id', user.id)
+        .single()
+    : Promise.resolve({ data: null });
+  const classesPromise = supabase
+    .from('classes')
+    .select('id, name, teacher_id, student_count')
+    .order('name');
+  const studentsPromise = loadStudentDirectory(supabase);
+  const totalStudentsPromise = supabase
     .from('students')
     .select('id', { count: 'exact', head: true });
+  const attendanceRowsPromise = loadAttendanceRows(supabase, analyticsStart, today);
+  const recentLogsPromise = supabase
+    .from('attendance_logs')
+    .select(`
+      class_id,
+      date,
+      status,
+      classes!inner(name, teacher:profiles(full_name))
+    `)
+    .order('date', { ascending: false })
+    .limit(200);
+
+  const [profileResult, classesResult, students, totalStudentsResult, attendanceRows, recentLogsResult] = await Promise.all([
+    profilePromise,
+    classesPromise,
+    studentsPromise,
+    totalStudentsPromise,
+    attendanceRowsPromise,
+    recentLogsPromise,
+  ]);
+
+  let teacherName = 'Учитель';
+  let teacherInitials = 'У';
+  let userRole: 'ADMIN' | 'TEACHER' = 'TEACHER';
+  const userEmail = user?.email || '';
+  const profile = profileResult.data;
+
+  if (profile) {
+    teacherName = profile.full_name;
+    userRole = isAdminRole(profile.role) ? 'ADMIN' : 'TEACHER';
+    teacherInitials = profile.full_name
+      .split(' ')
+      .map((part: string) => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  }
+
+  const classesRaw = classesResult.data;
+  const classes: ClassInfo[] = (classesRaw || []).map((classRow: any) => ({
+    id: classRow.id,
+    name: classRow.name,
+    teacher_id: classRow.teacher_id,
+    student_count: classRow.student_count,
+  }));
+  const classNameById = new Map(classes.map((classInfo) => [classInfo.id, classInfo.name]));
+  const studentById = new Map(
+    students.map((student) => [
+      student.id,
+      { name: student.full_name },
+    ])
+  );
 
   const todayTotals = createTotals();
   const todayByClass = new Map<string, StatusTotals>();
@@ -225,7 +291,7 @@ export default async function DashboardPage() {
       let classSummary = monthlyByClass.get(row.class_id);
       if (!classSummary) {
         classSummary = {
-          name: row.class?.name || classes.find((classInfo) => classInfo.id === row.class_id)?.name || 'Класс',
+          name: classNameById.get(row.class_id) || 'Класс',
           totals: createTotals(),
         };
         monthlyByClass.set(row.class_id, classSummary);
@@ -242,9 +308,10 @@ export default async function DashboardPage() {
 
       let studentSummary = monthlyByStudent.get(row.student_id);
       if (!studentSummary) {
+        const student = studentById.get(row.student_id);
         studentSummary = {
-          name: row.student?.full_name || 'Ученик',
-          className: row.class?.name || classes.find((classInfo) => classInfo.id === row.class_id)?.name || 'Класс',
+          name: student?.name || 'Ученик',
+          className: classNameById.get(row.class_id) || 'Класс',
           statuses: new Map(),
           absentCount: 0,
         };
@@ -259,7 +326,7 @@ export default async function DashboardPage() {
     present: todayTotals.present,
     late: todayTotals.late,
     absent: todayTotals.absent,
-    total: totalStudents || 0,
+    total: totalStudentsResult.count || 0,
   };
 
   const classBarStats: ClassBarStat[] = classes
@@ -319,6 +386,17 @@ export default async function DashboardPage() {
       };
     }),
   };
+
+  const formatPercentage = (value: number) => (
+    Number.isInteger(value) ? String(value) : value.toFixed(1)
+  );
+  const heroAttendanceText = weeklyAverage === null
+    ? 'Недостаточно отметок для сравнения посещаемости за неделю.'
+    : weeklyTrend.changePp === null
+      ? `Средняя посещаемость за последние пять учебных дней — ${formatPercentage(weeklyAverage)}%.`
+      : weeklyTrend.changePp === 0
+        ? `Средняя посещаемость за последние пять учебных дней — ${formatPercentage(weeklyAverage)}%; без изменений к предыдущим пяти дням.`
+        : `Средняя посещаемость за последние пять учебных дней — ${formatPercentage(weeklyAverage)}%: ${weeklyTrend.changePp > 0 ? 'выше' : 'ниже'} на ${formatPercentage(Math.abs(weeklyTrend.changePp))} п.п. к предыдущим пяти дням.`;
 
   const attendanceInsights: AttendanceInsight[] = [];
   const monthlySchoolDays = getSchoolDaysBetween(monthStart, today);
@@ -394,8 +472,8 @@ export default async function DashboardPage() {
     attendanceInsights.push({
       tone: weeklyTrend.changePp > 0 ? 'good' : 'watch',
       text: weeklyTrend.changePp === 0
-        ? 'Посещаемость за последние шесть учебных дней не изменилась по сравнению с предыдущими шестью днями.'
-        : `Посещаемость за последние шесть учебных дней ${direction} на ${magnitude} п.п. по сравнению с предыдущими шестью днями.`,
+        ? 'Посещаемость за последние пять учебных дней не изменилась по сравнению с предыдущими пятью днями.'
+        : `Посещаемость за последние пять учебных дней ${direction} на ${magnitude} п.п. по сравнению с предыдущими пятью днями.`,
     });
   }
 
@@ -406,16 +484,7 @@ export default async function DashboardPage() {
     });
   }
 
-  const { data: recentLogsRaw } = await supabase
-    .from('attendance_logs')
-    .select(`
-      class_id,
-      date,
-      status,
-      classes!inner(name, teacher:profiles(full_name))
-    `)
-    .order('date', { ascending: false })
-    .limit(200);
+  const recentLogsRaw = recentLogsResult.data;
 
   const logMap = new Map<string, LogEntry>();
   if (recentLogsRaw) {
@@ -468,6 +537,7 @@ export default async function DashboardPage() {
       unmarkedClasses={unmarkedClasses}
       markedCount={markedCount}
       today={today}
+      heroAttendanceText={heroAttendanceText}
     />
   );
 }

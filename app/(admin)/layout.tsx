@@ -1,10 +1,7 @@
-import { Suspense } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import { isAdminRole } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import AdminShell from './AdminShell';
-import AdminUserInfo from './AdminUserInfo';
-import { AdminUserInfoSkeleton } from '@/app/components/RouteLoading';
 import './admin.css';
 import '../AttendanceDashboard.css';
 import '../navigation.css';
@@ -25,7 +22,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // access if middleware is ever skipped by a deployment configuration.
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('full_name, role')
     .eq('id', user.id)
     .single();
 
@@ -36,9 +33,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <AdminShell
       userInfo={
-        <Suspense fallback={<AdminUserInfoSkeleton />}>
-          <AdminUserInfo userId={user.id} />
-        </Suspense>
+        <div className="admin-user-name">
+          {profile?.full_name || 'Администратор'}
+          <br />
+          <span style={{ color: 'var(--text-3)', fontSize: '12px' }}>{profile?.role}</span>
+        </div>
       }
     >
       {children}

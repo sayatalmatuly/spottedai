@@ -808,6 +808,29 @@
   padding: 4px 24px;
 }
 
+.modal-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 20px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.modal-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid rgba(0, 113, 227, 0.2);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: modal-spinner-rotate 0.7s linear infinite;
+}
+
+@keyframes modal-spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
 .roster-row {
   display: flex;
   align-items: center;
@@ -830,6 +853,62 @@
   flex: 1;
   font-size: 14px;
   font-weight: 500;
+}
+
+.attendance-status-control {
+  display: flex;
+  flex-direction: column;
+  width: 190px;
+  flex-shrink: 0;
+}
+
+.absence-options {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  width: 190px;
+  max-height: 0;
+  margin-bottom: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0 solid transparent;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: none;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: max-height 0.2s ease, margin-bottom 0.2s ease, padding 0.2s ease,
+    border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.16s ease, transform 0.2s ease;
+}
+
+.absence-options.open {
+  max-height: 40px;
+  margin-bottom: 6px;
+  padding: 3px;
+  border: 1px solid rgba(255, 69, 58, 0.2);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.12);
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.absence-options button {
+  min-width: 0;
+  padding: 5px 4px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-2);
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.absence-options button:hover,
+.absence-options button.selected {
+  color: var(--red);
+  background: var(--red-soft);
 }
 
 .seg {
