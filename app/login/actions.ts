@@ -2,11 +2,13 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { sendRegistrationNotification } from '@/lib/registration-email';
+import { DEFAULT_LOCALE, isAppLocale, translate, type AppLocale } from '@/lib/locale';
 
 type RegistrationInput = {
   fullName: string;
   email: string;
   password: string;
+  locale?: AppLocale;
 };
 
 type RegistrationResult = {
@@ -21,7 +23,9 @@ export async function requestTeacherRegistration({
   fullName,
   email,
   password,
+  locale: requestedLocale,
 }: RegistrationInput): Promise<RegistrationResult> {
+  const locale = isAppLocale(requestedLocale) ? requestedLocale : DEFAULT_LOCALE;
   const normalizedName = fullName.trim();
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -33,7 +37,13 @@ export async function requestTeacherRegistration({
     || password.length < 6
     || password.length > 128
   ) {
-    return { error: 'Заполните ФИО, email и пароль не короче 6 символов.' };
+    return {
+      error: translate(
+        locale,
+        'Аты-жөніңізді, email мекенжайын және кемінде 6 таңбадан тұратын құпиясөзді толтырыңыз.',
+        'Enter your full name, email, and a password with at least 6 characters.'
+      ),
+    };
   }
 
   const supabase = await createClient();

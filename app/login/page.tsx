@@ -4,9 +4,13 @@ import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { requestTeacherRegistration } from './actions';
+import { translate } from '@/lib/locale';
+import { useLanguage } from '@/app/components/LanguageProvider';
 import './login.css';
 
 export default function LoginPage() {
+  const { locale } = useLanguage();
+  const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -32,7 +36,7 @@ export default function LoginPage() {
       if (error) {
         setError(
           error.message === 'Invalid login credentials'
-            ? 'Неверный email или пароль'
+            ? t('Email немесе құпиясөз қате', 'Incorrect email or password')
             : error.message
         );
         setLoading(false);
@@ -52,7 +56,7 @@ export default function LoginPage() {
 
       if (profile && profile.status === 'PENDING' && !isAdmin) {
         await supabase.auth.signOut();
-        setError('Ваш аккаунт ещё не одобрен администратором. Дождитесь подтверждения.');
+        setError(t('Аккаунтыңызды әкімші әлі мақұлдаған жоқ. Расталуын күтіңіз.', 'Your account has not been approved by an administrator yet.'));
         setLoading(false);
         return;
       }
@@ -62,10 +66,10 @@ export default function LoginPage() {
     } else {
       let result;
       try {
-        result = await requestTeacherRegistration({ fullName, email, password });
+        result = await requestTeacherRegistration({ fullName, email, password, locale });
       } catch (registrationError) {
         console.error(registrationError);
-        setError('Не удалось отправить заявку. Попробуйте ещё раз.');
+        setError(t('Өтінімді жіберу мүмкін болмады. Қайталап көріңіз.', 'Could not send the request. Please try again.'));
         setLoading(false);
         return;
       }
@@ -84,8 +88,8 @@ export default function LoginPage() {
         setPassword('');
         setSuccess(
           result.notificationSent
-            ? 'Заявка отправлена администратору. После подтверждения вы сможете войти.'
-            : 'Заявка создана. Администратору не удалось отправить уведомление — сообщите ему о заявке.'
+            ? t('Өтінім әкімшіге жіберілді. Расталғаннан кейін кіре аласыз.', 'Your request was sent to the administrator. You can sign in once it is approved.')
+            : t('Өтінім жасалды, бірақ әкімшіге хабарландыру жіберілмеді. Өтінім туралы хабарлаңыз.', 'Your request was created, but the administrator was not notified. Please let them know about it.')
         );
         setLoading(false);
       }
@@ -95,9 +99,9 @@ export default function LoginPage() {
   return (
     <div className="login-shell">
       <form className="login-card" onSubmit={handleSubmit}>
-        <div className="login-glyph">Ж</div>
-        <h1>Журнал</h1>
-        <p className="login-sub">Электронный журнал посещаемости</p>
+        <div className="login-glyph">{t('Ж', 'J')}</div>
+        <h1>{t('Журнал', 'Journal')}</h1>
+        <p className="login-sub">{t('Электрондық қатысу журналы', 'Digital attendance journal')}</p>
 
         <div className="auth-tabs">
           <button
@@ -109,7 +113,7 @@ export default function LoginPage() {
               setSuccess(null);
             }}
           >
-            Войти
+            {t('Кіру', 'Sign in')}
           </button>
           <button
             type="button"
@@ -120,7 +124,7 @@ export default function LoginPage() {
               setSuccess(null);
             }}
           >
-            Регистрация
+            {t('Тіркелу', 'Register')}
           </button>
         </div>
 
@@ -129,12 +133,12 @@ export default function LoginPage() {
 
         {mode === 'signup' && (
           <label>
-            <span>ФИО</span>
+            <span>{t('Аты-жөні', 'Full name')}</span>
             <input
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Иванова Ольга Сергеевна"
+              placeholder={t('Айдана Серікқызы', 'Jane Doe')}
               required
             />
           </label>
@@ -153,7 +157,7 @@ export default function LoginPage() {
         </label>
 
         <label>
-          <span>Пароль</span>
+          <span>{t('Құпиясөз', 'Password')}</span>
           <input
             type="password"
             value={password}
@@ -167,11 +171,11 @@ export default function LoginPage() {
         <button type="submit" className="login-btn" disabled={loading}>
           {loading
             ? mode === 'login'
-              ? 'Вход...'
-              : 'Регистрация...'
+              ? t('Кіру...', 'Signing in...')
+              : t('Тіркелу...', 'Registering...')
             : mode === 'login'
-            ? 'Войти'
-            : 'Зарегистрироваться'}
+            ? t('Кіру', 'Sign in')
+            : t('Тіркелу', 'Register')}
         </button>
       </form>
     </div>

@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { updateProfileName } from './actions';
 import type { Profile } from '@/lib/types';
+import { dateLocale, translate } from '@/lib/locale';
+import { useLanguage } from '@/app/components/LanguageProvider';
 import './profile.css';
 
 interface ProfileClientProps {
@@ -14,6 +16,8 @@ interface ProfileClientProps {
 }
 
 export default function ProfileClient({ profile, userEmail }: ProfileClientProps) {
+  const { locale } = useLanguage();
+  const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -28,7 +32,7 @@ export default function ProfileClient({ profile, userEmail }: ProfileClientProps
         .join('')
         .slice(0, 2)
         .toUpperCase()
-    : 'У';
+    : t('М', 'T');
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,10 +41,10 @@ export default function ProfileClient({ profile, userEmail }: ProfileClientProps
 
     try {
       await updateProfileName(fullName);
-      setMessage({ text: 'Профиль успешно обновлён!', type: 'success' });
+      setMessage({ text: t('Профиль сәтті жаңартылды!', 'Profile updated successfully!'), type: 'success' });
       router.refresh();
     } catch (err: any) {
-      setMessage({ text: err.message || 'Ошибка обновления', type: 'error' });
+      setMessage({ text: t('Профильді жаңарту мүмкін болмады', 'Could not update the profile'), type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -57,24 +61,24 @@ export default function ProfileClient({ profile, userEmail }: ProfileClientProps
       <div className="profile-container">
         <div className="profile-header">
           <Link href="/" prefetch className="profile-back">
-            ← Вернуться в Журнал
+            ← {t('Журналға оралу', 'Back to Journal')}
           </Link>
           {profile?.role === 'ADMIN' && (
             <Link href="/admin/teachers" prefetch className="profile-back">
-              Админ-панель →
+              {t('Әкімші панелі', 'Admin panel')} →
             </Link>
           )}
         </div>
 
         <div className="profile-card">
           <div className="profile-avatar-large">{initials}</div>
-          <h1 className="profile-name">{fullName || 'Учитель'}</h1>
+          <h1 className="profile-name">{fullName || t('Мұғалім', 'Teacher')}</h1>
           <span
             className={`profile-role-badge ${
               profile?.role === 'ADMIN' ? 'admin' : 'teacher'
             }`}
           >
-            {profile?.role === 'ADMIN' ? 'Администратор' : 'Учитель'}
+            {profile?.role === 'ADMIN' ? t('Әкімші', 'Administrator') : t('Мұғалім', 'Teacher')}
           </span>
 
           {message && (
@@ -97,31 +101,31 @@ export default function ProfileClient({ profile, userEmail }: ProfileClientProps
 
           <form onSubmit={handleSave}>
             <div className="profile-field">
-              <label>ФИО</label>
+              <label>{t('Аты-жөні', 'Full name')}</label>
               <input
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="Иванова Ольга Сергеевна"
+                placeholder={t('Айдана Серікқызы', 'Jane Doe')}
                 required
               />
             </div>
 
             <div className="profile-field">
-              <label>Email (логин)</label>
+              <label>Email ({t('логин', 'sign-in')})</label>
               <input type="email" value={userEmail} disabled style={{ opacity: 0.7 }} />
             </div>
 
             <div className="profile-info-grid">
               <div className="profile-info-item">
-                <span>Роль в системе</span>
+                <span>{t('Жүйедегі рөлі', 'Role in the system')}</span>
                 <strong>{profile?.role === 'ADMIN' ? 'ADMIN' : 'TEACHER'}</strong>
               </div>
               <div className="profile-info-item">
-                <span>Дата создания</span>
+                <span>{t('Жасалған күні', 'Created on')}</span>
                 <strong>
                   {profile?.created_at
-                    ? new Date(profile.created_at).toLocaleDateString('ru-RU')
+                    ? new Date(profile.created_at).toLocaleDateString(dateLocale(locale))
                     : '—'}
                 </strong>
               </div>
@@ -133,14 +137,14 @@ export default function ProfileClient({ profile, userEmail }: ProfileClientProps
                 className="btn-logout"
                 onClick={handleSignOut}
               >
-                Выйти из аккаунта
+                {t('Аккаунттан шығу', 'Sign out')}
               </button>
               <button
                 type="submit"
                 className="btn-save-profile"
                 disabled={loading}
               >
-                {loading ? 'Сохранение...' : 'Сохранить изменения'}
+                {loading ? t('Сақталуда...', 'Saving...') : t('Өзгерістерді сақтау', 'Save changes')}
               </button>
             </div>
           </form>
@@ -149,4 +153,3 @@ export default function ProfileClient({ profile, userEmail }: ProfileClientProps
     </div>
   );
 }
-

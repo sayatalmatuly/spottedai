@@ -161,3 +161,15 @@
   cursor: not-allowed;
   transform: none;
 }
+
+@media (max-width: 480px) {
+  .login-shell {
+    align-items: flex-start;
+    padding: 16px 14px 88px;
+  }
+
+  .login-card {
+    padding: 28px 20px 24px;
+    border-radius: 18px;
+  }
+}

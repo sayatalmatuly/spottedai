@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { translate, type AppLocale } from '@/lib/locale';
+import { getCurrentLocale } from '@/lib/locale-server';
 import type { AttendanceStatus } from '@/lib/types';
 
 const MAX_PERIOD_DAYS = 92;
@@ -8,6 +10,7 @@ type SummaryRequest = {
   classId?: unknown;
   dateFrom?: unknown;
   dateTo?: unknown;
+  locale?: unknown;
 };
 
 type AttendanceLog = {
@@ -29,7 +32,8 @@ function createTotals(): StatusTotals {
   return { present: 0, late: 0, absent: 0 };
 }
 
-function formatAttendanceData(logs: AttendanceLog[]) {
+function formatAttendanceData(logs: AttendanceLog[], locale: AppLocale) {
+  const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
   const dailyTotals = new Map<string, StatusTotals>();
   const studentTotals = new Map<string, StatusTotals>();
 
@@ -39,7 +43,7 @@ function formatAttendanceData(logs: AttendanceLog[]) {
     dailyTotals.set(log.date, dayTotals);
 
     const student = Array.isArray(log.students) ? log.students[0] : log.students;
-    const studentName = student?.full_name ?? 'Ученик без имени';
+    const studentName = student?.full_name ?? t('Аты жоқ оқушы', 'Unnamed student');
     const totals = studentTotals.get(studentName) ?? createTotals();
     totals[log.status]++;
     studentTotals.set(studentName, totals);
@@ -47,7 +51,10 @@ function formatAttendanceData(logs: AttendanceLog[]) {
 
   const dailySummary = Array.from(dailyTotals.entries())
     .sort(([firstDate], [secondDate]) => firstDate.localeCompare(secondDate))
-    .map(([date, totals]) => `${date}: пришли ${totals.present}, опоздали ${totals.late}, отсутствуют ${totals.absent}`)
+    .map(([date, totals]) => t(
+      `${date}: келді ${totals.present}, кешікті ${totals.late}, жоқ ${totals.absent}`,
+      `${date}: present ${totals.present}, late ${totals.late}, absent ${totals.absent}`
+    ))
     .join('\n');
 
   const studentsNeedingAttention = Array.from(studentTotals.entries())
@@ -58,15 +65,18 @@ function formatAttendanceData(logs: AttendanceLog[]) {
       || (second.present + second.late + second.absent) - (first.present + first.late + first.absent)
     ))
     .slice(0, 10)
-    .map(([name, totals]) => `${name}: отсутствий ${totals.absent}, опозданий ${totals.late}`)
+    .map(([name, totals]) => t(
+      `${name}: келмегені ${totals.absent}, кешіккені ${totals.late}`,
+      `${name}: absences ${totals.absent}, late arrivals ${totals.late}`
+    ))
     .join('\n');
 
   return [
-    'Динамика по дням:',
+    t('Күндер бойынша динамика:', 'Daily trend:'),
     dailySummary,
     '',
-    'Ученики, которым нужно внимание:',
-    studentsNeedingAttention || 'Нет пропусков и опозданий.',
+    t('Назар аударуды қажет ететін оқушылар:', 'Students who need attention:'),
+    studentsNeedingAttention || t('Қалулар мен кешігулер жоқ.', 'No absences or late arrivals.'),
   ].join('\n');
 }
 
@@ -90,12 +100,14 @@ function extractChatCompletionText(data: unknown) {
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
+  let locale = await getCurrentLocale();
+  const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.json({ error: 'Требуется авторизация.' }, { status: 401 });
+    return NextResponse.json({ error: t('Авторизация қажет.', 'Authentication is required.') }, { status: 401 });
   }
 
   const { data: profile } = await supabase
@@ -105,17 +117,18 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (!profile || (profile.role !== 'TEACHER' && profile.role !== 'ADMIN')) {
-    return NextResponse.json({ error: 'Недостаточно прав для ИИ-анализа.' }, { status: 403 });
+    return NextResponse.json({ error: t('AI талдауын пайдалануға құқық жеткіліксіз.', 'You do not have permission to use AI analysis.') }, { status: 403 });
   }
 
   let body: SummaryRequest;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: 'Неверный формат запроса.' }, { status: 400 });
+    return NextResponse.json({ error: t('Сұрау пішімі қате.', 'Invalid request format.') }, { status: 400 });
   }
 
   const { classId, dateFrom, dateTo } = body;
+  if (body.locale === 'kk' || body.locale === 'en' || body.locale === 'ru') locale = body.locale;
   if (
     typeof classId !== 'string'
     || !classId
@@ -123,7 +136,7 @@ export async function POST(req: NextRequest) {
     || !isDateKey(dateTo)
   ) {
     return NextResponse.json(
-      { error: 'classId, dateFrom и dateTo обязательны и должны быть корректными.' },
+      { error: t('classId, dateFrom және dateTo міндетті және дұрыс болуы керек.', 'classId, dateFrom, and dateTo are required and must be valid.') },
       { status: 400 }
     );
   }
@@ -131,14 +144,14 @@ export async function POST(req: NextRequest) {
   const periodLength = (Date.parse(`${dateTo}T00:00:00Z`) - Date.parse(`${dateFrom}T00:00:00Z`)) / 86_400_000;
   if (periodLength < 0 || periodLength > MAX_PERIOD_DAYS) {
     return NextResponse.json(
-      { error: `Период анализа должен быть от 1 до ${MAX_PERIOD_DAYS + 1} дней.` },
+      { error: t(`Талдау кезеңі 1–${MAX_PERIOD_DAYS + 1} күн аралығында болуы керек.`, `The analysis period must be between 1 and ${MAX_PERIOD_DAYS + 1} days.`) },
       { status: 400 }
     );
   }
 
   if (!process.env.GROQ_API_KEY) {
     return NextResponse.json(
-      { error: 'ИИ-анализ не настроен: добавьте GROQ_API_KEY в переменные окружения сервера.' },
+      { error: t('AI талдауы бапталмаған: сервер айнымалыларына GROQ_API_KEY қосыңыз.', 'AI analysis is not configured: add GROQ_API_KEY to the server environment.') },
       { status: 503 }
     );
   }
@@ -153,14 +166,14 @@ export async function POST(req: NextRequest) {
 
   if (dbError) {
     console.error('Could not load attendance for AI summary:', dbError.message);
-    return NextResponse.json({ error: 'Не удалось загрузить отметки посещаемости.' }, { status: 500 });
+    return NextResponse.json({ error: t('Қатысу белгілерін жүктеу мүмкін болмады.', 'Could not load attendance records.') }, { status: 500 });
   }
 
   if (!logs || logs.length === 0) {
-    return NextResponse.json({ summary: 'Нет отметок за выбранный период.' });
+    return NextResponse.json({ summary: t('Таңдалған кезеңге қатысу белгілері жоқ.', 'There are no attendance records for the selected period.') });
   }
 
-  const attendanceData = formatAttendanceData(logs as AttendanceLog[]);
+  const attendanceData = formatAttendanceData(logs as AttendanceLog[], locale);
   const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -174,14 +187,17 @@ export async function POST(req: NextRequest) {
       messages: [{
         role: 'system',
         content: [
-        'Ты помощник классного руководителя.',
-        'Составь краткую полезную сводку на русском языке только по переданным данным.',
-        'Укажи тренд, доли или числа из данных и учеников с частыми пропусками или опозданиями.',
-        'Не придумывай факты и не используй больше пяти коротких предложений.',
+        t('Сен сынып жетекшісінің көмекшісісің.', 'You are an assistant to a class teacher.'),
+        t('Тек берілген деректер бойынша қазақ тілінде қысқа, пайдалы қорытынды жаз.', 'Write a short, useful summary in English using only the supplied data.'),
+        t('Трендті, деректердегі үлестерді не сандарды және жиі қалатын не кешігетін оқушыларды көрсет.', 'Mention the trend, rates or counts from the data, and students with frequent absences or late arrivals.'),
+        t('Дерек ойдан шығарма және бес қысқа сөйлемнен асырма.', 'Do not invent facts and use no more than five short sentences.'),
         ].join(' '),
       }, {
         role: 'user',
-        content: `Посещаемость за период ${dateFrom} — ${dateTo}:\n${attendanceData}`,
+        content: t(
+          `${dateFrom} — ${dateTo} аралығындағы қатысу:\n${attendanceData}`,
+          `Attendance from ${dateFrom} to ${dateTo}:\n${attendanceData}`
+        ),
       }],
     }),
   });
@@ -189,14 +205,14 @@ export async function POST(req: NextRequest) {
   if (!groqResponse.ok) {
     console.error('Groq summary request failed:', groqResponse.status, await groqResponse.text());
     return NextResponse.json(
-      { error: 'ИИ-сервис временно недоступен. Попробуйте ещё раз.' },
+      { error: t('AI қызметі уақытша қолжетімсіз. Қайталап көріңіз.', 'The AI service is temporarily unavailable. Please try again.') },
       { status: 502 }
     );
   }
 
   const summary = extractChatCompletionText(await groqResponse.json());
   if (!summary) {
-    return NextResponse.json({ error: 'ИИ не вернул текстовую сводку.' }, { status: 502 });
+    return NextResponse.json({ error: t('AI мәтіндік қорытындыны қайтармады.', 'The AI did not return a text summary.') }, { status: 502 });
   }
 
   return NextResponse.json({ summary });

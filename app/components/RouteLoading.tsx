@@ -1,16 +1,26 @@
-import '../navigation.css';
+'use client';
 
-export function LoadingSpinner({ label = 'Загрузка' }: { label?: string }) {
+import '../navigation.css';
+import { translate } from '@/lib/locale';
+import { useLanguage } from './LanguageProvider';
+
+export function LoadingSpinner({ label }: { label?: string }) {
+  const { locale } = useLanguage();
+  const accessibleLabel = label || translate(locale, 'Жүктелуде', 'Loading');
+
   return (
-    <span className="loading-spinner" role="status" aria-label={label}>
+    <span className="loading-spinner" role="status" aria-label={accessibleLabel}>
       <span className="loading-spinner-ring" aria-hidden="true" />
     </span>
   );
 }
 
 export function AdminPageLoading() {
+  const { locale } = useLanguage();
+  const label = translate(locale, 'Жүктелуде', 'Loading');
+
   return (
-    <div className="route-loading admin-route-loading" aria-busy="true" aria-label="Загрузка">
+    <div className="route-loading admin-route-loading" aria-busy="true" aria-label={label}>
       <LoadingSpinner />
       <div className="route-loading-header skeleton-block" />
       <div className="route-loading-card skeleton-block" />
@@ -20,8 +30,11 @@ export function AdminPageLoading() {
 }
 
 export function DashboardPageLoading() {
+  const { locale } = useLanguage();
+  const label = translate(locale, 'Жүктелуде', 'Loading');
+
   return (
-    <div className="route-loading dashboard-route-loading shell" aria-busy="true" aria-label="Загрузка">
+    <div className="route-loading dashboard-route-loading shell" aria-busy="true" aria-label={label}>
       <div className="route-loading-spinner"><LoadingSpinner /></div>
       <aside className="sidebar">
         <div className="skeleton-block" style={{ height: 48, marginBottom: 24 }} />
@@ -44,8 +57,11 @@ export function DashboardPageLoading() {
 }
 
 export function ProfilePageLoading() {
+  const { locale } = useLanguage();
+  const label = translate(locale, 'Жүктелуде', 'Loading');
+
   return (
-    <div className="route-loading profile-route-loading" aria-busy="true" aria-label="Загрузка">
+    <div className="route-loading profile-route-loading" aria-busy="true" aria-label={label}>
       <LoadingSpinner />
       <div className="skeleton-block" style={{ height: 20, width: 160, marginBottom: 24 }} />
       <div className="route-loading-profile-card skeleton-block" />

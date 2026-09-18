@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useMemo, useTransition } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { translate } from '@/lib/locale';
+import { useLanguage } from '../components/LanguageProvider';
 import '../navigation.css';
 
 export default function AdminShell({
@@ -17,6 +19,8 @@ export default function AdminShell({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const supabase = useMemo(() => createClient(), []);
+  const { locale } = useLanguage();
+  const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -26,15 +30,15 @@ export default function AdminShell({
   };
 
   const navItems = [
-    { href: '/admin/teachers', label: 'Учителя' },
-    { href: '/admin/classes', label: 'Классы' },
-    { href: '/admin/schedule', label: 'Расписание' },
+    { href: '/admin/teachers', label: t('Мұғалімдер', 'Teachers') },
+    { href: '/admin/classes', label: t('Сыныптар', 'Classes') },
+    { href: '/admin/schedule', label: t('Кесте', 'Schedule') },
   ];
 
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
-        <div className="admin-brand">Журнал</div>
+        <div className="admin-brand">Journal</div>
         <nav className="admin-nav">
           {navItems.map((item) => {
             const isActive = pathname?.startsWith(item.href);
@@ -52,12 +56,23 @@ export default function AdminShell({
         </nav>
         <div className="admin-user-info">
           {userInfo}
+          <Link href="/" prefetch className="admin-dashboard-link">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            >
+              <path d="M3 11.5 12 4l9 7.5v8a.5.5 0 0 1-.5.5h-4.75v-5.75h-7.5V20H3.5a.5.5 0 0 1-.5-.5v-8Z" />
+            </svg>
+            <span>{t('Басқару тақтасы', 'Dashboard')}</span>
+          </Link>
           <button
             onClick={handleLogout}
             className="admin-btn admin-btn-secondary"
-            style={{ width: '100%', marginTop: '8px' }}
           >
-            Выйти
+            {t('Шығу', 'Sign out')}
           </button>
         </div>
       </aside>

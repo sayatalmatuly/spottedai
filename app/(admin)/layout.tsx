@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { isAdminRole } from '@/lib/auth';
+import { getCurrentLocale } from '@/lib/locale-server';
+import { translate } from '@/lib/locale';
 import { redirect } from 'next/navigation';
 import AdminShell from './AdminShell';
 import './admin.css';
@@ -10,6 +12,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
+  const locale = await getCurrentLocale();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -34,7 +37,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <AdminShell
       userInfo={
         <div className="admin-user-name">
-          {profile?.full_name || 'Администратор'}
+          {profile?.full_name || translate(locale, 'Әкімші', 'Administrator')}
           <br />
           <span style={{ color: 'var(--text-3)', fontSize: '12px' }}>{profile?.role}</span>
         </div>

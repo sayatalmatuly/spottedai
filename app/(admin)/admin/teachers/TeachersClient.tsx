@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { assignTeacherToClass, approveUserRequest, rejectUserRequest } from './actions';
 import type { Profile, ClassInfo } from '@/lib/types';
+import { dateLocale, translate } from '@/lib/locale';
+import { useLanguage } from '@/app/components/LanguageProvider';
 
 export default function TeachersClient({ 
   pendingUsers,
@@ -13,6 +15,8 @@ export default function TeachersClient({
   activeUsers: Profile[];
   classes: ClassInfo[]; 
 }) {
+  const { locale } = useLanguage();
+  const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   const getTeacherClasses = (teacherId: string) => {
@@ -47,26 +51,26 @@ export default function TeachersClient({
       <div className="admin-card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
-            ⏳ Заявки на регистрацию ({pendingUsers.length})
+            ⏳ {t('Тіркелу өтінімдері', 'Registration requests')} ({pendingUsers.length})
           </h2>
           {pendingUsers.length > 0 && (
             <span style={{ fontSize: '12px', background: 'rgba(255,159,10,0.14)', color: '#FF9F0A', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>
-              Требует внимания
+              {t('Назар аударуды қажет етеді', 'Needs attention')}
             </span>
           )}
         </div>
 
         {pendingUsers.length === 0 ? (
           <div className="admin-empty" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-2)' }}>
-            Новых заявок на регистрацию нет
+            {t('Жаңа тіркелу өтінімдері жоқ', 'No new registration requests')}
           </div>
         ) : (
           <table className="admin-table">
             <thead>
               <tr>
-                <th>ФИО</th>
-                <th>Дата подачи</th>
-                <th>Действия</th>
+                <th>{t('Аты-жөні', 'Name')}</th>
+                <th>{t('Өтінім күні', 'Submitted')}</th>
+                <th>{t('Әрекеттер', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -75,7 +79,7 @@ export default function TeachersClient({
                   <td style={{ fontWeight: 600 }}>{user.full_name}</td>
                   <td>
                     {user.created_at
-                      ? new Date(user.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+                      ? new Date(user.created_at).toLocaleDateString(dateLocale(locale), { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
                       : '—'}
                   </td>
                   <td>
@@ -86,7 +90,7 @@ export default function TeachersClient({
                         disabled={loadingId === user.id}
                         style={{ background: '#30D158' }}
                       >
-                        Одобрить (Учитель)
+                        {t('Бекіту (мұғалім)', 'Approve (teacher)')}
                       </button>
                       <button
                         className="admin-btn admin-btn-primary"
@@ -94,14 +98,14 @@ export default function TeachersClient({
                         disabled={loadingId === user.id}
                         style={{ background: '#0071E3' }}
                       >
-                        Одобрить (Админ)
+                        {t('Бекіту (әкімші)', 'Approve (admin)')}
                       </button>
                       <button
                         className="admin-btn admin-btn-danger"
                         onClick={() => handleReject(user.id)}
                         disabled={loadingId === user.id}
                       >
-                        Отклонить
+                        {t('Қабылдамау', 'Reject')}
                       </button>
                     </div>
                   </td>
@@ -115,19 +119,19 @@ export default function TeachersClient({
       {/* 2. ACTIVE USERS */}
       <div className="admin-card">
         <h2 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 16px' }}>
-          👥 Подтверждённые пользователи ({activeUsers.length})
+          👥 {t('Расталған пайдаланушылар', 'Approved users')} ({activeUsers.length})
         </h2>
 
         {activeUsers.length === 0 ? (
-          <div className="admin-empty">Нет зарегистрированных пользователей</div>
+          <div className="admin-empty">{t('Тіркелген пайдаланушылар жоқ', 'No registered users')}</div>
         ) : (
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Имя</th>
-                <th>Роль</th>
-                <th>Назначенные классы</th>
-                <th>Действия</th>
+                <th>{t('Аты', 'Name')}</th>
+                <th>{t('Рөлі', 'Role')}</th>
+                <th>{t('Бекітілген сыныптар', 'Assigned classes')}</th>
+                <th>{t('Әрекеттер', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -139,13 +143,13 @@ export default function TeachersClient({
                     <td style={{ fontWeight: 500 }}>{user.full_name}</td>
                     <td>
                       <span className={`admin-badge ${user.role === 'ADMIN' ? 'role-admin' : 'role-teacher'}`}>
-                        {user.role === 'ADMIN' ? 'АДМИНИСТРАТОР' : 'УЧИТЕЛЬ'}
+                        {user.role === 'ADMIN' ? t('ӘКІМШІ', 'ADMINISTRATOR') : t('МҰҒАЛІМ', 'TEACHER')}
                       </span>
                     </td>
                     <td>
                       {userClasses.length > 0 
                         ? userClasses.map(c => c.name).join(', ')
-                        : <span style={{ color: 'var(--text-3)' }}>Нет классов</span>
+                        : <span style={{ color: 'var(--text-3)' }}>{t('Сыныптар жоқ', 'No classes')}</span>
                       }
                     </td>
                     <td>
@@ -156,13 +160,13 @@ export default function TeachersClient({
                         }
                       }} style={{ display: 'flex', gap: '8px' }}>
                         <select name="class_id" className="admin-select" style={{ width: 'auto' }}>
-                          <option value="">Привязать класс...</option>
+                          <option value="">{t('Сыныпты бекіту...', 'Assign a class...')}</option>
                           {classes.map(c => (
                             <option key={c.id} value={c.id}>{c.name}</option>
                           ))}
                         </select>
                         <button type="submit" className="admin-btn admin-btn-secondary">
-                          Привязать
+                          {t('Бекіту', 'Assign')}
                         </button>
                       </form>
                     </td>

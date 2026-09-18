@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { addClass, deleteClass, addStudent, deleteStudent } from './actions';
 import { Student } from '@/lib/types';
+import { translate } from '@/lib/locale';
+import { useLanguage } from '@/app/components/LanguageProvider';
 
 // Extend ClassInfo for UI
 interface UIClassInfo {
@@ -19,6 +21,8 @@ export default function ClassesClient({
   initialClasses: UIClassInfo[], 
   allStudents: Student[] 
 }) {
+  const { locale } = useLanguage();
+  const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
   const [isAddClassModalOpen, setIsAddClassModalOpen] = useState(false);
   const [expandedClassId, setExpandedClassId] = useState<string | null>(null);
   const studentsByClass = useMemo(() => {
@@ -39,14 +43,14 @@ export default function ClassesClient({
     <>
       <div style={{marginBottom: '24px'}}>
         <button onClick={() => setIsAddClassModalOpen(true)} className="admin-btn admin-btn-primary">
-          Добавить класс
+          {t('Сынып қосу', 'Add class')}
         </button>
       </div>
 
       <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
         {initialClasses.length === 0 ? (
           <div className="admin-card">
-            <div className="admin-empty">Нет классов</div>
+            <div className="admin-empty">{t('Сыныптар жоқ', 'No classes yet')}</div>
           </div>
         ) : (
           initialClasses.map(cls => {
@@ -63,8 +67,8 @@ export default function ClassesClient({
                   <div>
                     <h3 className="admin-card-title">{cls.name}</h3>
                     <span style={{fontSize: '13px', color: 'var(--text-2)'}}>
-                      {cls.teacher ? `Кл. рук: ${cls.teacher.full_name}` : 'Нет кл. руководителя'} 
-                      {' • '} {classStudents.length} учеников
+                      {cls.teacher ? `${t('Сынып жетекшісі', 'Class teacher')}: ${cls.teacher.full_name}` : t('Сынып жетекшісі тағайындалмаған', 'No class teacher assigned')}
+                      {' • '} {classStudents.length} {t('оқушы', 'students')}
                     </span>
                   </div>
                   <div>
@@ -75,7 +79,7 @@ export default function ClassesClient({
                       }} 
                       className="admin-btn admin-btn-danger"
                     >
-                      Удалить
+                      {t('Жою', 'Delete')}
                     </button>
                   </div>
                 </div>
@@ -94,12 +98,12 @@ export default function ClassesClient({
                       <input 
                         type="text" 
                         name="full_name" 
-                        placeholder="Имя ученика" 
+                        placeholder={t('Оқушының аты', 'Student name')}
                         required 
                         className="admin-input"
                       />
                       <button type="submit" className="admin-btn admin-btn-primary">
-                        Добавить
+                        {t('Қосу', 'Add')}
                       </button>
                     </form>
 
@@ -115,7 +119,7 @@ export default function ClassesClient({
                                   className="admin-btn admin-btn-danger"
                                   style={{padding: '4px 8px', fontSize: '12px'}}
                                 >
-                                  Удалить
+                                  {t('Жою', 'Delete')}
                                 </button>
                               </td>
                             </tr>
@@ -123,7 +127,7 @@ export default function ClassesClient({
                         </tbody>
                       </table>
                     ) : (
-                      <div className="admin-empty" style={{padding: '24px'}}>Нет учеников</div>
+                      <div className="admin-empty" style={{padding: '24px'}}>{t('Оқушылар жоқ', 'No students yet')}</div>
                     )}
                   </div>
                 )}
@@ -136,21 +140,21 @@ export default function ClassesClient({
       {isAddClassModalOpen && (
         <div className="admin-overlay">
           <div className="admin-modal">
-            <h3 className="admin-modal-title">Новый класс</h3>
+            <h3 className="admin-modal-title">{t('Жаңа сынып', 'New class')}</h3>
             <form action={async (formData) => {
               await addClass(formData);
               setIsAddClassModalOpen(false);
             }}>
               <div className="admin-form-group">
-                <label>Название класса</label>
-                <input type="text" name="name" required className="admin-input" placeholder="Например: 10 А" />
+                <label>{t('Сынып атауы', 'Class name')}</label>
+                <input type="text" name="name" required className="admin-input" placeholder={t('Мысалы: 10 А', 'For example: 10 A')} />
               </div>
               <div className="admin-modal-actions">
                 <button type="button" onClick={() => setIsAddClassModalOpen(false)} className="admin-btn admin-btn-secondary">
-                  Отмена
+                  {t('Бас тарту', 'Cancel')}
                 </button>
                 <button type="submit" className="admin-btn admin-btn-primary">
-                  Создать
+                  {t('Құру', 'Create')}
                 </button>
               </div>
             </form>

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { saveAttendance } from '@/app/actions';
+import { dateLocale, translate } from '@/lib/locale';
+import { useLanguage } from './components/LanguageProvider';
 import type {
   AttendanceInsight,
   AbsenceReason,
@@ -47,14 +49,9 @@ const LOG_GRADIENTS = [
   'linear-gradient(155deg,#30D158,#00B37D)'
 ];
 
-const ABSENCE_REASON_OPTIONS: { value: AbsenceReason; short: string; label: string }[] = [
-  { value: 'sick', short: 'Б', label: 'Болеет' },
-  { value: 'excused', short: 'О', label: 'Отпросился' },
-  { value: 'valid', short: 'У', label: 'Уважительная причина' },
-  { value: 'unexcused', short: 'Н', label: 'Не пришёл' },
-];
-
 export default function AttendanceDashboard(props: DashboardProps) {
+  const { locale } = useLanguage();
+  const t = (kazakh: string, english: string, russian?: string) => translate(locale, kazakh, english, russian);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   
@@ -153,19 +150,19 @@ export default function AttendanceDashboard(props: DashboardProps) {
       const res = await fetch('/api/ai/summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ classId: activeClassId, dateFrom, dateTo: props.today }),
+        body: JSON.stringify({ classId: activeClassId, dateFrom, dateTo: props.today, locale }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setAiError(data.error || 'Не удалось получить анализ');
+        setAiError(data.error || t('Талдауды алу мүмкін болмады', 'Could not get the analysis'));
         return;
       }
 
       setAiSummary(data.summary);
     } catch (e) {
-      setAiError('Не удалось связаться с сервером');
+      setAiError(t('Сервермен байланысу мүмкін болмады', 'Could not reach the server'));
     } finally {
       setIsAiLoading(false);
     }
@@ -213,13 +210,13 @@ export default function AttendanceDashboard(props: DashboardProps) {
       router.refresh();
     } catch (e) {
       console.error(e);
-      alert('Failed to save attendance');
+      alert(t('Қатысу деректерін сақтау мүмкін болмады', 'Could not save attendance'));
     } finally {
       setIsSavingMarks(false);
     }
   };
 
-  const formattedDate = new Date(props.today).toLocaleDateString('ru-RU', { 
+  const formattedDate = new Date(props.today).toLocaleDateString(dateLocale(locale), {
     weekday: 'long', 
     day: 'numeric', 
     month: 'long', 
@@ -248,11 +245,17 @@ export default function AttendanceDashboard(props: DashboardProps) {
   if (currentTrendSegment.length > 0) trendSegments.push(currentTrendSegment);
   const trendChange = props.weeklyTrend.changePp;
   const trendPillText = trendChange === null
-    ? 'Нет сравнения'
-    : `${trendChange > 0 ? '+' : ''}${formatPercentage(trendChange)} п.п.`;
+    ? t('Салыстыру жоқ', 'No comparison')
+    : `${trendChange > 0 ? '+' : ''}${formatPercentage(trendChange)} ${t('т.п.', 'pp', 'п.п.')}`;
   const trendPillClass = trendChange === null || trendChange === 0
     ? 'neutral'
     : trendChange < 0 ? 'down' : '';
+  const absenceReasonOptions: { value: AbsenceReason; short: string; label: string }[] = [
+    { value: 'sick', short: t('А', 'S', 'Б'), label: t('Ауырып қалды', 'Sick') },
+    { value: 'excused', short: t('Р', 'E', 'О'), label: t('Рұқсат сұрады', 'Excused') },
+    { value: 'valid', short: t('Д', 'V', 'У'), label: t('Дәлелді себеп', 'Valid reason') },
+    { value: 'unexcused', short: t('К', 'U', 'Н'), label: t('Келмеді', 'Unexcused absence') },
+  ];
 
   return (
     <div className="shell">
@@ -260,12 +263,12 @@ export default function AttendanceDashboard(props: DashboardProps) {
       <aside className="sidebar">
         <div className="brand">
           <div>
-            <h1>Журнал</h1>
-            <span>Информационно-технологический школа-лицей №3 им.С.Толыбекова</span>
+            <h1>{t('Журнал', 'Journal')}</h1>
+            <span>{t('С. Толыбеков атындағы №3 ақпараттық-технологиялық мектеп-лицейі', 'Information Technology School-Lyceum No. 3 named after S. Tolybekov')}</span>
           </div>
         </div>
 
-        <div className="side-label">Классы</div>
+        <div className="side-label">{t('Сыныптар', 'Classes')}</div>
         <ul className="side-list">
           {props.classes.map((item) => (
             <li key={item.id}>
@@ -289,7 +292,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
           <div className="avatar-sm">{props.teacherInitials}</div>
           <div className="who">
             <b>{props.teacherName}</b>
-            <span>{props.userRole === 'ADMIN' ? 'Администратор' : 'Учитель'}</span>
+            <span>{props.userRole === 'ADMIN' ? t('Әкімші', 'Administrator') : t('Мұғалім', 'Teacher')}</span>
           </div>
           <div style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-3)' }}>
             {isUserMenuOpen ? '▲' : '▼'}
@@ -319,7 +322,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
                 onClick={() => setIsUserMenuOpen(false)}
                 className="user-popup-link"
               >
-                👤 Личный кабинет
+                👤 {t('Жеке кабинет', 'Profile')}
               </Link>
 
               {props.userRole === 'ADMIN' && (
@@ -329,7 +332,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
                   onClick={() => setIsUserMenuOpen(false)}
                   className="user-popup-link admin"
                 >
-                  ⚙️ Админ-панель
+                  ⚙️ {t('Әкімші панелі', 'Admin panel')}
                 </Link>
               )}
 
@@ -351,7 +354,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,69,58,0.08)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
-                🚪 Выйти
+                🚪 {t('Шығу', 'Sign out')}
               </div>
             </div>
           )}
@@ -361,8 +364,28 @@ export default function AttendanceDashboard(props: DashboardProps) {
       {/* MAIN */}
       <main className="main">
         <div className="topbar">
-          <h2>Дашборд</h2>
+          <h2>{t('Басқару тақтасы', 'Dashboard')}</h2>
           <div className="date">{capitalizedDate}</div>
+          <div className="mobile-dashboard-controls">
+            <label>
+              <span className="sr-only">{t('Сыныпты таңдаңыз', 'Select a class')}</span>
+              <select
+                value={activeClassId}
+                onChange={(event) => handleClassSelect(event.target.value)}
+                aria-label={t('Сыныпты таңдаңыз', 'Select a class')}
+              >
+                {props.classes.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+            <Link href="/profile" prefetch className="mobile-dashboard-link">
+              {t('Профиль', 'Profile')}
+            </Link>
+            <button type="button" onClick={handleSignOut} className="mobile-sign-out">
+              {t('Шығу', 'Sign out')}
+            </button>
+          </div>
         </div>
 
         {/* HERO / RINGS */}
@@ -408,28 +431,36 @@ export default function AttendanceDashboard(props: DashboardProps) {
             </svg>
             <div className="ring-center">
               <div className="n">{props.overallPct}%</div>
-              <div className="l">сегодня</div>
+              <div className="l">{t('бүгін', 'today')}</div>
             </div>
           </div>
 
           <div className="hero-copy">
             <h3>{props.heroAttendanceText}</h3>
             <p>
-              {props.stats.total} учеников на учёте · отметки внесены по {props.markedCount} классам из {props.classes.length}. 
-              {props.unmarkedClasses.length > 0 && ` Классу ${props.unmarkedClasses.map(c => c.name).join(', ')} ещё нужно отметить сегодняшний день.`}
+              {t(
+                `${props.stats.total} оқушы тіркелген · белгілер ${props.markedCount} / ${props.classes.length} сыныпқа қойылды.`,
+                `${props.stats.total} students enrolled · attendance recorded for ${props.markedCount} of ${props.classes.length} classes.`,
+                `${props.stats.total} учеников на учёте · отметки внесены по ${props.markedCount} классам из ${props.classes.length}.`
+              )}
+              {props.unmarkedClasses.length > 0 && t(
+                ` ${props.unmarkedClasses.map(c => c.name).join(', ')} сыныбы үшін бүгінгі белгіні қою керек.`,
+                ` ${props.unmarkedClasses.map(c => c.name).join(', ')} still need attendance recorded today.`,
+                ` Классу ${props.unmarkedClasses.map(c => c.name).join(', ')} ещё нужно отметить сегодняшний день.`
+              )}
             </p>
             <div className="ring-legend">
               <div>
                 <span className="sw" style={{ background: 'var(--green)' }} />
-                Пришли <b>{props.presentPct}%</b>
+                {t('Келді', 'Present')} <b>{props.presentPct}%</b>
               </div>
               <div>
                 <span className="sw" style={{ background: 'var(--orange)' }} />
-                Опоздали <b>{props.latePct}%</b>
+                {t('Кешікті', 'Late')} <b>{props.latePct}%</b>
               </div>
               <div>
                 <span className="sw" style={{ background: 'var(--red)' }} />
-                Нет <b>{props.absentPct}%</b>
+                {t('Жоқ', 'Absent')} <b>{props.absentPct}%</b>
               </div>
             </div>
           </div>
@@ -445,7 +476,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
             >
               <path d="M4 12l5 5L20 6" />
             </svg>
-            Отметить учеников
+            {t('Оқушыларды белгілеу', 'Mark attendance')}
           </button>
         </section>
 
@@ -458,7 +489,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
               </svg>
             </div>
             <div className="n">{props.stats.present}</div>
-            <div className="l">Пришли</div>
+            <div className="l">{t('Келді', 'Present')}</div>
           </div>
           <div className="stat-card late">
             <div className="icon">
@@ -468,7 +499,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
               </svg>
             </div>
             <div className="n">{props.stats.late}</div>
-            <div className="l">Опоздали</div>
+            <div className="l">{t('Кешікті', 'Late')}</div>
           </div>
           <div className="stat-card absent">
             <div className="icon">
@@ -477,7 +508,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
               </svg>
             </div>
             <div className="n">{props.stats.absent}</div>
-            <div className="l">Отсутствуют</div>
+            <div className="l">{t('Жоқ', 'Absent')}</div>
           </div>
           <div className="stat-card total">
             <div className="icon">
@@ -486,7 +517,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
               </svg>
             </div>
             <div className="n">{props.stats.total}</div>
-            <div className="l">Всего в списках</div>
+            <div className="l">{t('Барлық оқушы', 'Total students')}</div>
           </div>
         </section>
 
@@ -499,7 +530,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
                   <path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" />
                 </svg>
               </div>
-              <h4>ИИ-аналитика</h4>
+              <h4>{t('AI талдауы', 'AI analysis')}</h4>
             </div>
             {props.attendanceInsights.map((insight, index) => (
               <div key={`${insight.tone}-${index}`} className="insight">
@@ -525,7 +556,13 @@ export default function AttendanceDashboard(props: DashboardProps) {
                   opacity: isAiLoading ? 0.6 : 1,
                 }}
               >
-                {isAiLoading ? 'Анализирую…' : `Обзор по ${activeClass?.name || 'классу'} (30 дней)`}
+                {isAiLoading
+                  ? t('Талдануда…', 'Analyzing…')
+                  : t(
+                    `${activeClass?.name || t('сынып', 'class')} бойынша шолу (30 күн)`,
+                    `${activeClass?.name || 'class'} overview (30 days)`,
+                    `Обзор по ${activeClass?.name || 'классу'} (30 дней)`
+                  )}
               </button>
 
               {aiError && (
@@ -548,7 +585,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
                     ? '—'
                     : `${formatPercentage(props.weeklyTrend.averagePct)}%`}
                 </div>
-                <div className="cap">Средняя посещаемость за неделю</div>
+                <div className="cap">{t('Аптадағы орташа қатысу', 'Weekly average attendance')}</div>
               </div>
               <div className={`trend-pill ${trendPillClass}`}>{trendPillText}</div>
             </div>
@@ -599,7 +636,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
               ))}
               {trendSegments.length === 0 && (
                 <text x="150" y="55" textAnchor="middle" fontSize="10" fill="#AEAEB2">
-                  Нет отметок за выбранные дни
+                  {t('Таңдалған күндерге белгі жоқ', 'No attendance for the selected days')}
                 </text>
               )}
               <g fontSize="9" fill="#AEAEB2">
@@ -616,17 +653,19 @@ export default function AttendanceDashboard(props: DashboardProps) {
         {/* BAR + DONUT */}
         <section className="grid-3">
           <div className="panel">
-            <h4>По классам</h4>
-            <div className="sub">Посещаемость за сегодня</div>
+            <h4>{t('Сыныптар бойынша', 'By class')}</h4>
+            <div className="sub">{t('Бүгінгі қатысу', 'Today\'s attendance')}</div>
             <div
               className="attendance-class-bars"
-              aria-label="Посещаемость по классам"
+              aria-label={t('Сыныптар бойынша қатысу', 'Attendance by class')}
             >
               {props.classBarStats.map((bar) => (
                 <div
                   key={bar.name}
                   className={`attendance-class-bar ${bar.isBest ? 'best' : ''}`}
-                  title={bar.markedCount === 0 ? 'Сегодня отметок нет' : `${bar.percentage}% из ${bar.markedCount} отметок`}
+                  title={bar.markedCount === 0
+                    ? t('Бүгін белгі жоқ', 'No attendance marked today')
+                    : t(`${bar.percentage}% · ${bar.markedCount} белгі`, `${bar.percentage}% from ${bar.markedCount} marks`, `${bar.percentage}% из ${bar.markedCount} отметок`)}
                 >
                   <div className="attendance-class-track">
                     <div className="attendance-class-fill" style={{ height: `${bar.percentage || 0}%` }} />
@@ -641,8 +680,8 @@ export default function AttendanceDashboard(props: DashboardProps) {
           </div>
 
           <div className="panel">
-            <h4>Структура отметок</h4>
-            <div className="sub">За последний месяц</div>
+            <h4>{t('Белгілер құрамы', 'Attendance breakdown')}</h4>
+            <div className="sub">{t('Соңғы айда', 'Over the last month')}</div>
             <div className="donut-wrap">
               <svg width="112" height="112" viewBox="0 0 42 42">
                 <circle cx="21" cy="21" r="15.9" fill="transparent" stroke="#F0F0F2" strokeWidth="6.5" />
@@ -683,18 +722,18 @@ export default function AttendanceDashboard(props: DashboardProps) {
               <div className="donut-rows">
                 <div>
                   <span className="sw" style={{ background: '#30D158' }} />
-                  Пришли<b>{props.donutStats.presentPct}%</b>
+                  {t('Келді', 'Present')}<b>{props.donutStats.presentPct}%</b>
                 </div>
                 <div>
                   <span className="sw" style={{ background: '#FF9F0A' }} />
-                  Опоздали<b>{props.donutStats.latePct}%</b>
+                  {t('Кешікті', 'Late')}<b>{props.donutStats.latePct}%</b>
                 </div>
                 <div>
                   <span className="sw" style={{ background: '#FF453A' }} />
-                  Отсутствуют<b>{props.donutStats.absentPct}%</b>
+                  {t('Жоқ', 'Absent')}<b>{props.donutStats.absentPct}%</b>
                 </div>
                 {props.donutStats.total === 0 && (
-                  <div className="donut-empty">Нет отметок за период</div>
+                  <div className="donut-empty">{t('Кезеңде белгі жоқ', 'No attendance for this period')}</div>
                 )}
               </div>
             </div>
@@ -703,9 +742,9 @@ export default function AttendanceDashboard(props: DashboardProps) {
 
         {/* LOG */}
         <section className="log-panel">
-          <h4 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px' }}>Последние записи</h4>
+          <h4 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px' }}>{t('Соңғы жазбалар', 'Recent entries')}</h4>
           <div className="sub" style={{ fontSize: '12.5px', color: 'var(--text-2)', marginBottom: '6px' }}>
-            Журнал отметок по классам
+            {t('Сыныптар бойынша қатысу журналы', 'Class attendance log')}
           </div>
 
           {props.recentLogs.map((log, index) => {
@@ -718,7 +757,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
                   {log.class_name}
                 </div>
                 <div className="log-main">
-                  <div className="cls">{log.class_name} класс</div>
+                  <div className="cls">{log.class_name} {t('сынып', 'class')}</div>
                   <div className="who">{log.teacher_name}</div>
                 </div>
                 <div className="log-breakdown">
@@ -732,7 +771,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
           })}
           {props.recentLogs.length === 0 && (
             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-2)', fontSize: '14px' }}>
-              Нет записей
+              {t('Жазбалар жоқ', 'No entries yet')}
             </div>
           )}
         </section>
@@ -748,8 +787,8 @@ export default function AttendanceDashboard(props: DashboardProps) {
         <div className="modal">
           <div className="modal-head">
             <div>
-              <h3>Отметить учеников</h3>
-              <div className="sub">{activeClass?.name || 'Класс'} · {capitalizedDate}</div>
+              <h3>{t('Оқушыларды белгілеу', 'Mark attendance')}</h3>
+              <div className="sub">{activeClass?.name || t('Сынып', 'Class')} · {capitalizedDate}</div>
             </div>
             <button className="modal-close" onClick={() => setIsModalOpen(false)}>
               ×
@@ -760,10 +799,10 @@ export default function AttendanceDashboard(props: DashboardProps) {
             {isLoadingStudents ? (
               <div className="modal-loading" role="status">
                 <span className="modal-loading-spinner" aria-hidden="true" />
-                Загрузка учеников...
+                {t('Оқушылар жүктелуде...', 'Loading students...')}
               </div>
             ) : students.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center' }}>Нет учеников в классе</div>
+              <div style={{ padding: '20px', textAlign: 'center' }}>{t('Сыныпта оқушылар жоқ', 'There are no students in this class')}</div>
             ) : (
               students.map((student, idx) => (
                 <div key={student.id} className="roster-row">
@@ -773,10 +812,10 @@ export default function AttendanceDashboard(props: DashboardProps) {
                     <div
                       className={`absence-options ${student.status === 'absent' ? 'open' : ''}`}
                       role="group"
-                      aria-label={`Причина отсутствия: ${student.full_name}`}
+                      aria-label={t(`Себебі: ${student.full_name}`, `Absence reason: ${student.full_name}`, `Причина отсутствия: ${student.full_name}`)}
                       aria-hidden={student.status !== 'absent'}
                     >
-                      {ABSENCE_REASON_OPTIONS.map((reason) => (
+                      {absenceReasonOptions.map((reason) => (
                         <button
                           key={reason.value}
                           type="button"
@@ -795,19 +834,19 @@ export default function AttendanceDashboard(props: DashboardProps) {
                         className={student.status === 'present' ? 'sel present' : ''}
                         onClick={() => handleStatusChange(student.id, 'present')}
                       >
-                        Пришёл
+                        {t('Келді', 'Present')}
                       </button>
                       <button
                         className={student.status === 'late' ? 'sel late' : ''}
                         onClick={() => handleStatusChange(student.id, 'late')}
                       >
-                        Опоздал
+                        {t('Кешікті', 'Late')}
                       </button>
                       <button
                         className={student.status === 'absent' ? 'sel absent' : ''}
                         onClick={() => handleStatusChange(student.id, 'absent')}
                       >
-                        Нет
+                        {t('Жоқ', 'Absent')}
                       </button>
                     </div>
                   </div>
@@ -818,10 +857,10 @@ export default function AttendanceDashboard(props: DashboardProps) {
 
           <div className="modal-foot">
             <button className="btn-cancel" onClick={() => setIsModalOpen(false)}>
-              Отмена
+              {t('Бас тарту', 'Cancel')}
             </button>
             <button className="btn-save" onClick={handleSaveMarks} disabled={isLoadingStudents || isSavingMarks}>
-              {isSavingMarks ? 'Сохраняю...' : 'Сохранить отметки'}
+              {isSavingMarks ? t('Сақталуда...', 'Saving...') : t('Белгілерді сақтау', 'Save attendance')}
             </button>
           </div>
         </div>
@@ -829,7 +868,11 @@ export default function AttendanceDashboard(props: DashboardProps) {
 
       {/* TOAST */}
       <div className={`toast ${isToastVisible ? 'show' : ''}`}>
-        Отметки за {activeClass?.name || 'класс'} сохранены
+        {t(
+          `${activeClass?.name || t('сынып', 'class')} үшін белгілер сақталды`,
+          `Attendance for ${activeClass?.name || 'the class'} was saved`,
+          `Отметки за ${activeClass?.name || 'класс'} сохранены`
+        )}
       </div>
     </div>
   );

@@ -1,11 +1,14 @@
 import { Analytics } from '@vercel/analytics/next'
 import { Inter } from 'next/font/google'
 import type { Metadata, Viewport } from 'next'
+import { getCurrentLocale } from '@/lib/locale-server'
+import { LanguageProvider } from './components/LanguageProvider'
+import { LanguageToggle } from './components/LanguageToggle'
 import './globals.css'
 import './monochrome-overrides.css'
 
 const inter = Inter({
-  subsets: ['latin'],
+  subsets: ['latin', 'cyrillic'],
   variable: '--font-inter',
   display: 'swap',
 })
@@ -38,15 +41,20 @@ export const viewport: Viewport = {
   themeColor: '#ffffff',
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const locale = await getCurrentLocale()
+
   return (
-    <html lang="en">
+    <html lang={locale}>
       <body className={`${inter.variable} antialiased`}>
-        {children}
+        <LanguageProvider initialLocale={locale}>
+          {children}
+          <LanguageToggle />
+        </LanguageProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
