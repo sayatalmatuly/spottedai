@@ -4,6 +4,7 @@ import { isAdminRole } from '@/lib/auth';
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
+  const pathname = request.nextUrl.pathname;
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
@@ -30,11 +31,17 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLoginPage = request.nextUrl.pathname === '/login';
-  const isPendingPage = request.nextUrl.pathname === '/pending-approval';
+  const isLoginPage = pathname === '/login';
+  const isPendingPage = pathname === '/pending-approval';
+  // The recovery code is exchanged for a session by this route handler. It
+  // must reach the handler before the regular guest redirect is applied.
+  // `/reset-password` validates both the recovery marker and Supabase user
+  // itself, so leaving it public here does not expose the reset form.
+  const isPasswordRecoveryRoute =
+    pathname === '/auth/callback' || pathname === '/reset-password';
 
   // If user is not logged in and trying to access a protected page, redirect to /login
-  if (!user && !isLoginPage) {
+  if (!user && !isLoginPage && !isPasswordRecoveryRoute) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);

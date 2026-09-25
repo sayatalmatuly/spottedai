@@ -162,6 +162,27 @@
   transform: none;
 }
 
+.login-reset-link {
+  display: inline-flex;
+  margin: 12px auto 0;
+  padding: 3px;
+  border: 0;
+  color: #0071E3;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-reset-link:hover {
+  color: #0077ED;
+  text-decoration: underline;
+}
+
+.login-back-link {
+  margin-top: 16px;
+}
+
 @media (max-width: 480px) {
   .login-shell {
     align-items: flex-start;

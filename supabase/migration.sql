@@ -191,3 +191,25 @@ CREATE INDEX idx_attendance_logs_date ON public.attendance_logs(date);
 CREATE INDEX idx_attendance_logs_class_date ON public.attendance_logs(class_id, date);
 CREATE INDEX idx_attendance_logs_student_date ON public.attendance_logs(student_id, date);
 CREATE INDEX idx_schedule_class_day ON public.schedule(class_id, day_of_week);
+
+-- Password reset eligibility. This allows the app to request a reset only for
+-- email-confirmed profiles that an administrator has approved.
+CREATE OR REPLACE FUNCTION public.can_request_password_reset(requested_email text)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM auth.users AS users
+    INNER JOIN public.profiles AS profiles ON profiles.id = users.id
+    WHERE lower(users.email) = lower(trim(requested_email))
+      AND users.email_confirmed_at IS NOT NULL
+      AND profiles.status::text = 'APPROVED'
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.can_request_password_reset(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.can_request_password_reset(text) TO service_role;
+NOTIFY pgrst, 'reload schema';
