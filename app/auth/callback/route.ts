@@ -10,14 +10,13 @@ function createRedirectResponse(request: NextRequest, pathname: string) {
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code');
   const next = request.nextUrl.searchParams.get('next');
+  const isPasswordRecovery = next === '/reset-password';
 
-  // Only the password-recovery email sent by this app is allowed to continue
-  // to the password form. Do not accept arbitrary redirect destinations.
-  if (!code || next !== '/reset-password') {
-    return createRedirectResponse(request, '/login?reset=invalid');
-  }
+  if (!code) return createRedirectResponse(request, '/login');
 
-  let response = createRedirectResponse(request, '/reset-password');
+  // Ignore arbitrary `next` values. The password-recovery marker is accepted
+  // only for the reset form; every other valid Supabase callback goes home.
+  let response = createRedirectResponse(request, isPasswordRecovery ? '/reset-password' : '/');
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder',
@@ -37,16 +36,21 @@ export async function GET(request: NextRequest) {
 
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
-    return createRedirectResponse(request, '/login?reset=invalid');
+    return createRedirectResponse(
+      request,
+      isPasswordRecovery ? '/login?reset=invalid' : '/login?error=invalid_link'
+    );
   }
 
-  response.cookies.set(PASSWORD_RECOVERY_COOKIE, '1', {
-    httpOnly: true,
-    maxAge: 10 * 60,
-    path: '/reset-password',
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-  });
+  if (isPasswordRecovery) {
+    response.cookies.set(PASSWORD_RECOVERY_COOKIE, '1', {
+      httpOnly: true,
+      maxAge: 10 * 60,
+      path: '/reset-password',
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    });
+  }
 
   return response;
 }

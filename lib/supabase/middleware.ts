@@ -33,15 +33,15 @@ export async function updateSession(request: NextRequest) {
 
   const isLoginPage = pathname === '/login';
   const isPendingPage = pathname === '/pending-approval';
-  // The recovery code is exchanged for a session by this route handler. It
+  // Supabase auth codes are exchanged for sessions by this route handler. It
   // must reach the handler before the regular guest redirect is applied.
   // `/reset-password` validates both the recovery marker and Supabase user
   // itself, so leaving it public here does not expose the reset form.
-  const isPasswordRecoveryRoute =
+  const isPublicAuthRoute =
     pathname === '/auth/callback' || pathname === '/reset-password';
 
   // If user is not logged in and trying to access a protected page, redirect to /login
-  if (!user && !isLoginPage && !isPasswordRecoveryRoute) {
+  if (!user && !isLoginPage && !isPublicAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);

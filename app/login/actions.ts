@@ -1,7 +1,9 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { headers } from 'next/headers';
 import { sendRegistrationNotification } from '@/lib/registration-email';
+import { getAuthCallbackUrl } from '@/lib/auth-urls';
 import { DEFAULT_LOCALE, isAppLocale, translate, type AppLocale } from '@/lib/locale';
 
 type RegistrationInput = {
@@ -55,6 +57,9 @@ export async function requestTeacherRegistration({
         full_name: normalizedName,
         role: 'TEACHER',
       },
+      emailRedirectTo: getAuthCallbackUrl({
+        origin: (await headers()).get('origin'),
+      }),
     },
   });
 

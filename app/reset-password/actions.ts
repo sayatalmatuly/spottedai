@@ -3,6 +3,7 @@
 import { cookies, headers } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getAuthCallbackUrl } from '@/lib/auth-urls';
 import { DEFAULT_LOCALE, isAppLocale, translate, type AppLocale } from '@/lib/locale';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -12,20 +13,6 @@ type ActionResult = {
   error?: string;
   success?: string;
 };
-
-function getResetCallbackUrl(origin: string | null) {
-  const configuredUrl = process.env.APP_URL?.trim();
-  // Prefer the actual origin of the page that requested the reset. This keeps
-  // production emails on the live domain even when APP_URL still has a local
-  // development value. APP_URL is only the fallback for non-browser calls.
-  const baseUrl = origin && /^https?:\/\//i.test(origin)
-    ? origin
-    : configuredUrl && /^https?:\/\//i.test(configuredUrl)
-      ? configuredUrl
-      : 'http://localhost:3000';
-
-  return new URL('/auth/callback?next=/reset-password', baseUrl).toString();
-}
 
 function getTranslator(locale: AppLocale) {
   return (kazakh: string, english: string, russian?: string) => translate(locale, kazakh, english, russian);
@@ -93,7 +80,10 @@ export async function requestPasswordReset({
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-    redirectTo: getResetCallbackUrl((await headers()).get('origin')),
+    redirectTo: getAuthCallbackUrl({
+      origin: (await headers()).get('origin'),
+      next: '/reset-password',
+    }),
   });
 
   if (error) {
