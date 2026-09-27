@@ -18,6 +18,7 @@ export default function TeachersClient({
   const { locale } = useLanguage();
   const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
 
   const getTeacherClasses = (teacherId: string) => {
     return classes.filter(c => c.teacher_id === teacherId);
@@ -25,10 +26,12 @@ export default function TeachersClient({
 
   const handleApprove = async (userId: string, role: 'ADMIN' | 'TEACHER') => {
     setLoadingId(userId);
+    setActionError(null);
     try {
       await approveUserRequest(userId, role);
     } catch (e) {
       console.error(e);
+      setActionError({ id: userId, message: t('Пайдаланушыны бекіту мүмкін болмады. Қайталап көріңіз.', 'Could not approve this request, please try again.') });
     } finally {
       setLoadingId(null);
     }
@@ -36,10 +39,12 @@ export default function TeachersClient({
 
   const handleReject = async (userId: string) => {
     setLoadingId(userId);
+    setActionError(null);
     try {
       await rejectUserRequest(userId);
     } catch (e) {
       console.error(e);
+      setActionError({ id: userId, message: t('Пайдаланушыны қабылдамау мүмкін болмады. Қайталап көріңіз.', 'Could not reject this request, please try again.') });
     } finally {
       setLoadingId(null);
     }
@@ -108,6 +113,18 @@ export default function TeachersClient({
                         {t('Қабылдамау', 'Reject')}
                       </button>
                     </div>
+                      {actionError?.id === user.id && (
+                        <div style={{
+                          marginTop: '8px',
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          background: 'rgba(255, 69, 58, 0.14)',
+                          color: '#FF453A',
+                        }}>
+                          {actionError.message}
+                        </div>
+                      )}
                   </td>
                 </tr>
               ))}

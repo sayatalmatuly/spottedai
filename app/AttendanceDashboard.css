@@ -36,6 +36,9 @@
   display: grid;
   grid-template-columns: 264px 1fr;
   min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  overflow-x: clip;
   background: var(--bg);
   color: var(--text);
   letter-spacing: -0.01em;
@@ -346,6 +349,12 @@
 .btn-mark svg {
   width: 16px;
   height: 16px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 /* ---------------- SUMMARY CARDS ---------------- */
@@ -806,6 +815,49 @@
 .modal-body {
   overflow-y: auto;
   padding: 4px 24px;
+  overscroll-behavior: contain;
+}
+
+.modal-date-picker {
+  padding: 0 20px 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.modal-date-picker label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.modal-date-picker input,
+.export-modal-body select {
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--bg);
+  font: inherit;
+}
+
+.export-modal {
+  max-width: 420px;
+}
+
+.export-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+
+.export-modal-body select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  font-size: 14px;
 }
 
 .modal-loading {
@@ -1285,5 +1337,169 @@
 
   .modal-foot button {
     width: 100%;
+  }
+}
+
+/* ---------------- PHONE EXPERIENCE ---------------- */
+@media (max-width: 640px) {
+  .main {
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-bottom: max(32px, env(safe-area-inset-bottom));
+    padding-left: max(14px, env(safe-area-inset-left));
+  }
+
+  .mobile-dashboard-controls select,
+  .mobile-dashboard-link,
+  .mobile-sign-out {
+    min-height: 44px;
+  }
+
+  .mobile-dashboard-controls select {
+    font-size: 16px;
+  }
+
+  .hero-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .hero-actions .btn-mark {
+    min-height: 48px;
+    white-space: normal;
+  }
+
+  .log-row {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'icon main date'
+      'icon breakdown breakdown';
+    align-items: center;
+    gap: 8px 10px;
+  }
+
+  .log-icon { grid-area: icon; }
+  .log-main { grid-area: main; }
+  .log-date {
+    grid-area: date;
+    margin-left: 0;
+  }
+  .log-breakdown {
+    grid-area: breakdown;
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  .overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal,
+  .export-modal {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 10px);
+    border-radius: 22px 22px 0 0;
+  }
+
+  .modal-head {
+    padding-top: 18px;
+  }
+
+  .modal-close {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    margin: -8px -8px 0 8px;
+    font-size: 20px;
+  }
+
+  .modal-date-picker {
+    padding: 0 16px 10px;
+  }
+
+  .modal-date-picker label {
+    justify-content: space-between;
+  }
+
+  .modal-date-picker input,
+  .export-modal-body select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .export-modal-body {
+    padding: 18px 16px;
+  }
+
+  .roster-row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+  }
+
+  .roster-row .roll {
+    width: auto;
+    padding-top: 12px;
+  }
+
+  .roster-row .fio {
+    min-width: 0;
+    padding-top: 10px;
+    overflow-wrap: anywhere;
+  }
+
+  .attendance-status-control {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .seg,
+  .absence-options {
+    width: 100%;
+  }
+
+  .seg button {
+    min-height: 42px;
+    padding: 8px 4px;
+  }
+
+  .absence-options.open {
+    max-height: 46px;
+  }
+
+  .absence-options button {
+    min-height: 36px;
+    padding: 7px 4px;
+  }
+
+  .modal-foot {
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+
+  .btn-save,
+  .btn-cancel {
+    min-height: 46px;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .topbar .date {
+    text-align: left;
+  }
+}
+
+@media (max-width: 359px) {
+  .stat-row {
+    grid-template-columns: 1fr;
   }
 }

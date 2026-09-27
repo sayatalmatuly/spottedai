@@ -1,42 +1,51 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { addClass, deleteClass, addStudent, deleteStudent } from './actions';
-import { Student } from '@/lib/types';
+import { createClient } from '@/lib/supabase/client';
+import type { Student } from '@/lib/types';
 import { translate } from '@/lib/locale';
 import { useLanguage } from '@/app/components/LanguageProvider';
 
-// Extend ClassInfo for UI
 interface UIClassInfo {
   id: string;
   name: string;
   teacher_id: string | null;
+  student_count?: number;
   teacher?: { id: string; full_name: string; } | null;
 }
 
 export default function ClassesClient({ 
-  initialClasses, 
-  allStudents 
+  initialClasses,
 }: { 
-  initialClasses: UIClassInfo[], 
-  allStudents: Student[] 
+  initialClasses: UIClassInfo[];
 }) {
   const { locale } = useLanguage();
   const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
+  const supabase = useMemo(() => createClient(), []);
   const [isAddClassModalOpen, setIsAddClassModalOpen] = useState(false);
   const [expandedClassId, setExpandedClassId] = useState<string | null>(null);
-  const studentsByClass = useMemo(() => {
-    const result = new Map<string, Student[]>();
-    for (const student of allStudents) {
-      const students = result.get(student.class_id) || [];
-      students.push(student);
-      result.set(student.class_id, students);
-    }
-    return result;
-  }, [allStudents]);
+  const [studentsByClass, setStudentsByClass] = useState<Map<string, Student[]>>(new Map());
+  const [loadingClassId, setLoadingClassId] = useState<string | null>(null);
+
+  const loadStudentsForClass = useCallback(async (classId: string) => {
+    setLoadingClassId(classId);
+    const { data } = await supabase
+      .from('students')
+      .select('id, full_name, class_id')
+      .eq('class_id', classId)
+      .order('full_name');
+    setStudentsByClass(prev => new Map(prev).set(classId, data || []));
+    setLoadingClassId(null);
+  }, [supabase]);
 
   const toggleClass = (id: string) => {
-    setExpandedClassId(prev => prev === id ? null : id);
+    if (expandedClassId === id) {
+      setExpandedClassId(null);
+      return;
+    }
+    setExpandedClassId(id);
+    if (!studentsByClass.has(id)) loadStudentsForClass(id);
   };
 
   return (
@@ -56,6 +65,8 @@ export default function ClassesClient({
           initialClasses.map(cls => {
             const classStudents = studentsByClass.get(cls.id) || [];
             const isExpanded = expandedClassId === cls.id;
+            const isLoading = loadingClassId === cls.id;
+            const displayCount = studentsByClass.has(cls.id) ? classStudents.length : (cls.student_count ?? 0);
             
             return (
               <div key={cls.id} className="admin-card" style={{marginBottom: 0}}>
@@ -68,13 +79,19 @@ export default function ClassesClient({
                     <h3 className="admin-card-title">{cls.name}</h3>
                     <span style={{fontSize: '13px', color: 'var(--text-2)'}}>
                       {cls.teacher ? `${t('Сынып жетекшісі', 'Class teacher')}: ${cls.teacher.full_name}` : t('Сынып жетекшісі тағайындалмаған', 'No class teacher assigned')}
-                      {' • '} {classStudents.length} {t('оқушы', 'students')}
+                      {' • '} {displayCount} {t('оқушы', 'students')}
                     </span>
                   </div>
                   <div>
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (!window.confirm(
+                          t(
+                            `«${cls.name}» сыныбын жою — барлық оқушылар мен қатысу тарихы да жойылады. Жалғастыру керек пе?`,
+                            `Delete "${cls.name}"? This also permanently deletes all its students and attendance history.`
+                          )
+                        )) return;
                         deleteClass(cls.id);
                       }} 
                       className="admin-btn admin-btn-danger"
@@ -89,6 +106,7 @@ export default function ClassesClient({
                     <form 
                       action={async (formData) => {
                         await addStudent(formData);
+                        await loadStudentsForClass(cls.id);
                         (document.getElementById(`add-student-form-${cls.id}`) as HTMLFormElement)?.reset();
                       }}
                       id={`add-student-form-${cls.id}`}
@@ -107,7 +125,11 @@ export default function ClassesClient({
                       </button>
                     </form>
 
-                    {classStudents.length > 0 ? (
+                    {isLoading ? (
+                      <div className="admin-empty" style={{padding: '24px', textAlign: 'center'}}>
+                        {t('Жүктелуде...', 'Loading...')}
+                      </div>
+                    ) : classStudents.length > 0 ? (
                       <table className="admin-table">
                         <tbody>
                           {classStudents.map(student => (
@@ -115,7 +137,15 @@ export default function ClassesClient({
                               <td>{student.full_name}</td>
                               <td style={{textAlign: 'right', width: '100px'}}>
                                 <button 
-                                  onClick={() => deleteStudent(student.id)} 
+                                  onClick={() => {
+                                    if (!window.confirm(
+                                      t(
+                                        `«${student.full_name}» оқушысын жою — оның қатысу тарихы да жойылады. Жалғастыру керек пе?`,
+                                        `Delete "${student.full_name}"? This also permanently deletes their attendance history.`
+                                      )
+                                    )) return;
+                                    deleteStudent(student.id).then(() => loadStudentsForClass(cls.id));
+                                  }} 
                                   className="admin-btn admin-btn-danger"
                                   style={{padding: '4px 8px', fontSize: '12px'}}
                                 >

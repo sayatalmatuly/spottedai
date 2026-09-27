@@ -6,7 +6,7 @@
 :root { --background: #ffffff; --foreground: #111111; --muted: #737373; --line: #e5e5e5; --panel: #ffffff; --purple: #111111; --cyan: #525252; --green: #262626; --amber: #737373; --red: #404040; font-family: var(--font-inter), Inter, sans-serif; }
 * { box-sizing: border-box; border-color: var(--line); }
 html { background: var(--background); color-scheme: light; }
-body { margin: 0; min-width: 320px; background: #ffffff; color: var(--foreground); font-size: 14px; }
+body { margin: 0; min-width: 320px; overflow-x: hidden; background: #ffffff; color: var(--foreground); font-size: 14px; }
 button, input { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }

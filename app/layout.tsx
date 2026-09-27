@@ -16,27 +16,13 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'Spotted AI · Attendance intelligence',
   description: 'A smarter attendance workspace for modern schools.',
-  generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
 }
 
 export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  interactiveWidget: 'resizes-content',
   colorScheme: 'light',
   themeColor: '#ffffff',
 }

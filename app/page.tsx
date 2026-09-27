@@ -82,6 +82,13 @@ function shiftDate(dateKeyValue: string, amount: number) {
   return dateKey(date);
 }
 
+function getWeekStart(dateKeyValue: string) {
+  const date = dateFromKey(dateKeyValue);
+  // Monday is the first day of the school's analytics week.
+  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+  return shiftDate(dateKeyValue, -daysSinceMonday);
+}
+
 function getSchoolDaysEndingOn(endDate: string, count: number) {
   const dates: string[] = [];
   const current = dateFromKey(endDate);
@@ -171,6 +178,7 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser();
   const today = dateKey(new Date());
   const monthStart = shiftDate(today, -29);
+  const analyticsWeekStart = getWeekStart(today);
   const weeklyDates = getSchoolDaysEndingOn(today, SCHOOL_DAYS_PER_WEEK);
   const previousWeeklyDates = getSchoolDaysEndingOn(shiftDate(weeklyDates[0], -1), SCHOOL_DAYS_PER_WEEK);
   const analyticsStart = monthStart < previousWeeklyDates[0] ? monthStart : previousWeeklyDates[0];
@@ -250,14 +258,14 @@ export default async function DashboardPage() {
   const todayByClass = new Map<string, StatusTotals>();
   const totalsByDate = new Map<string, StatusTotals>();
   const monthlyTotals = createTotals();
-  const monthlyByClass = new Map<string, { name: string; totals: StatusTotals }>();
-  const monthlyByStudent = new Map<string, {
+  const weeklyByClass = new Map<string, { name: string; totals: StatusTotals }>();
+  const weeklyByStudent = new Map<string, {
     name: string;
     className: string;
     statuses: Map<string, AttendanceStatus>;
     absentCount: number;
   }>();
-  const latenessByWeekday = new Map<number, StatusTotals>();
+  const weeklyLatenessByWeekday = new Map<number, StatusTotals>();
 
   for (const row of attendanceRows) {
     let dateTotals = totalsByDate.get(row.date);
@@ -279,26 +287,30 @@ export default async function DashboardPage() {
 
     if (row.date >= monthStart) {
       addStatus(monthlyTotals, row.status);
+    }
 
-      let classSummary = monthlyByClass.get(row.class_id);
+    // AI insights only use records from the current calendar week. On Monday
+    // the previous week's context is naturally left out of the new analysis.
+    if (row.date >= analyticsWeekStart) {
+      let classSummary = weeklyByClass.get(row.class_id);
       if (!classSummary) {
         classSummary = {
           name: classNameById.get(row.class_id) || t('Сынып', 'Class'),
           totals: createTotals(),
         };
-        monthlyByClass.set(row.class_id, classSummary);
+        weeklyByClass.set(row.class_id, classSummary);
       }
       addStatus(classSummary.totals, row.status);
 
       const weekday = dateFromKey(row.date).getUTCDay();
-      let weekdayTotals = latenessByWeekday.get(weekday);
+      let weekdayTotals = weeklyLatenessByWeekday.get(weekday);
       if (!weekdayTotals) {
         weekdayTotals = createTotals();
-        latenessByWeekday.set(weekday, weekdayTotals);
+        weeklyLatenessByWeekday.set(weekday, weekdayTotals);
       }
       addStatus(weekdayTotals, row.status);
 
-      let studentSummary = monthlyByStudent.get(row.student_id);
+      let studentSummary = weeklyByStudent.get(row.student_id);
       if (!studentSummary) {
         const student = studentById.get(row.student_id);
         studentSummary = {
@@ -307,7 +319,7 @@ export default async function DashboardPage() {
           statuses: new Map(),
           absentCount: 0,
         };
-        monthlyByStudent.set(row.student_id, studentSummary);
+        weeklyByStudent.set(row.student_id, studentSummary);
       }
       studentSummary.statuses.set(row.date, row.status);
       if (row.status === 'absent') studentSummary.absentCount++;
@@ -403,14 +415,14 @@ export default async function DashboardPage() {
         );
 
   const attendanceInsights: AttendanceInsight[] = [];
-  const monthlySchoolDays = getSchoolDaysBetween(monthStart, today);
+  const weeklySchoolDays = getSchoolDaysBetween(analyticsWeekStart, today);
   let longestAbsence: { name: string; className: string; streak: number } | null = null;
   let mostAbsent: { name: string; className: string; absentCount: number } | null = null;
 
-  for (const student of monthlyByStudent.values()) {
+  for (const student of weeklyByStudent.values()) {
     let currentStreak = 0;
     let studentLongestStreak = 0;
-    for (const date of monthlySchoolDays) {
+    for (const date of weeklySchoolDays) {
       if (student.statuses.get(date) === 'absent') {
         currentStreak++;
         studentLongestStreak = Math.max(studentLongestStreak, currentStreak);
@@ -440,15 +452,15 @@ export default async function DashboardPage() {
     attendanceInsights.push({
       tone: 'risk',
       text: t(
-        `${mostAbsent.name}, ${mostAbsent.className} — соңғы 30 күнде ${mostAbsent.absentCount} рет келмеді.`,
-        `${mostAbsent.name}, ${mostAbsent.className} — ${mostAbsent.absentCount} absences in the last 30 days.`,
-        `${mostAbsent.name}, ${mostAbsent.className} — ${mostAbsent.absentCount} пропусков за последние 30 дней.`
+        `${mostAbsent.name}, ${mostAbsent.className} — осы аптада ${mostAbsent.absentCount} рет келмеді.`,
+        `${mostAbsent.name}, ${mostAbsent.className} — ${mostAbsent.absentCount} absences this week.`,
+        `${mostAbsent.name}, ${mostAbsent.className} — ${mostAbsent.absentCount} пропусков на этой неделе.`
       ),
     });
   }
 
   let highestLateness: { weekday: number; totals: StatusTotals; percentage: number } | null = null;
-  for (const [weekday, totals] of latenessByWeekday) {
+  for (const [weekday, totals] of weeklyLatenessByWeekday) {
     const percentage = getPercentage(totals.late, totals.total) || 0;
     if (totals.late > 0 && (!highestLateness || percentage > highestLateness.percentage)) {
       highestLateness = { weekday, totals, percentage };
@@ -465,44 +477,24 @@ export default async function DashboardPage() {
     });
   }
 
-  let bestMonthlyClass: { name: string; totals: StatusTotals; percentage: number } | null = null;
-  for (const classSummary of monthlyByClass.values()) {
+  let bestWeeklyClass: { name: string; totals: StatusTotals; percentage: number } | null = null;
+  for (const classSummary of weeklyByClass.values()) {
     const percentage = getAttendancePercentage(classSummary.totals) || 0;
     if (
       classSummary.totals.total > 0
-      && (!bestMonthlyClass || percentage > bestMonthlyClass.percentage)
+      && (!bestWeeklyClass || percentage > bestWeeklyClass.percentage)
     ) {
-      bestMonthlyClass = { name: classSummary.name, totals: classSummary.totals, percentage };
+      bestWeeklyClass = { name: classSummary.name, totals: classSummary.totals, percentage };
     }
   }
-  if (bestMonthlyClass) {
+  if (bestWeeklyClass) {
     attendanceInsights.push({
       tone: 'good',
       text: t(
-        `${bestMonthlyClass.name} соңғы 30 күндегі ең жақсы қатысуды көрсетті — ${bestMonthlyClass.percentage}%.`,
-        `${bestMonthlyClass.name} has the best attendance over the last 30 days — ${bestMonthlyClass.percentage}%.`,
-        `${bestMonthlyClass.name} показывает лучшую посещаемость за последние 30 дней — ${bestMonthlyClass.percentage}%.`
+        `${bestWeeklyClass.name} осы аптадағы ең жақсы қатысуды көрсетті — ${bestWeeklyClass.percentage}%.`,
+        `${bestWeeklyClass.name} has the best attendance this week — ${bestWeeklyClass.percentage}%.`,
+        `${bestWeeklyClass.name} показывает лучшую посещаемость на этой неделе — ${bestWeeklyClass.percentage}%.`
       ),
-    });
-  }
-
-  if (weeklyTrend.changePp !== null) {
-    const kazakhDirection = weeklyTrend.changePp > 0 ? 'өсті' : weeklyTrend.changePp < 0 ? 'төмендеді' : 'өзгермеді';
-    const englishDirection = weeklyTrend.changePp > 0 ? 'increased' : weeklyTrend.changePp < 0 ? 'decreased' : 'did not change';
-    const magnitude = Math.abs(weeklyTrend.changePp);
-    attendanceInsights.push({
-      tone: weeklyTrend.changePp > 0 ? 'good' : 'watch',
-      text: weeklyTrend.changePp === 0
-        ? t(
-          'Соңғы бес оқу күніндегі қатысу алдыңғы бес күнмен салыстырғанда өзгермеді.',
-          'Attendance over the last five school days did not change from the previous five days.',
-          'Посещаемость за последние пять учебных дней не изменилась по сравнению с предыдущими пятью днями.'
-        )
-        : t(
-          `Соңғы бес оқу күніндегі қатысу алдыңғы бес күнмен салыстырғанда ${magnitude} т.п. ${kazakhDirection}.`,
-          `Attendance over the last five school days ${englishDirection} by ${magnitude} pp compared with the previous five days.`,
-          `Посещаемость за последние пять учебных дней ${weeklyTrend.changePp > 0 ? 'выросла' : 'снизилась'} на ${magnitude} п.п. по сравнению с предыдущими пятью днями.`
-        ),
     });
   }
 
@@ -510,9 +502,9 @@ export default async function DashboardPage() {
     attendanceInsights.push({
       tone: 'watch',
       text: t(
-        'Соңғы 30 күнде талдауға жеткілікті белгі әлі жоқ.',
-        'There is not enough attendance data from the last 30 days for analysis yet.',
-        'За последние 30 дней пока нет достаточного числа отметок для аналитики.'
+        'Осы аптада талдауға жеткілікті белгі әлі жоқ.',
+        'There is not enough attendance data from this week for analysis yet.',
+        'На этой неделе пока нет достаточного числа отметок для аналитики.'
       ),
     });
   }
@@ -570,6 +562,7 @@ export default async function DashboardPage() {
       unmarkedClasses={unmarkedClasses}
       markedCount={markedCount}
       today={today}
+      aiPeriodStart={analyticsWeekStart}
       heroAttendanceText={heroAttendanceText}
     />
   );

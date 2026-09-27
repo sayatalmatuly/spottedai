@@ -8,15 +8,10 @@ export default async function ClassesPage() {
   const supabase = await createClient();
   const locale = await getCurrentLocale();
   
-  const [classesResult, studentsResult] = await Promise.all([
-    supabase
-      .from('classes')
-      .select('id, name, teacher_id, teacher:profiles(id, full_name)'),
-    supabase
-      .from('students')
-      .select('id, full_name, class_id')
-      .order('full_name'),
-  ]);
+  const classesResult = await supabase
+    .from('classes')
+    .select('id, name, teacher_id, student_count, teacher:profiles(id, full_name)');
+
   const classes = sortClassesNaturally(
     (classesResult.data || []).map((classInfo: any) => ({
       ...classInfo,
@@ -29,10 +24,7 @@ export default async function ClassesPage() {
       <div className="admin-header">
         <h1 className="admin-title">{translate(locale, 'Сыныптар', 'Classes')}</h1>
       </div>
-      <ClassesClient 
-        initialClasses={classes}
-        allStudents={studentsResult.data || []}
-      />
+      <ClassesClient initialClasses={classes} />
     </div>
   );
 }

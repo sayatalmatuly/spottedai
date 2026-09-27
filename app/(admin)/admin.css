@@ -415,6 +415,17 @@
     border-radius: 13px;
   }
 
+  .admin-btn,
+  .admin-input,
+  .admin-select {
+    min-height: 44px;
+  }
+
+  .admin-input,
+  .admin-select {
+    font-size: 16px;
+  }
+
   .admin-filter-card {
     flex-direction: column;
   }

@@ -10,7 +10,15 @@ function createRedirectResponse(request: NextRequest, pathname: string) {
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code');
   const next = request.nextUrl.searchParams.get('next');
+  const authError = request.nextUrl.searchParams.get('error');
   const isPasswordRecovery = next === '/reset-password';
+
+  if (authError) {
+    return createRedirectResponse(
+      request,
+      isPasswordRecovery ? '/login?reset=invalid' : '/login?error=invalid_link'
+    );
+  }
 
   if (!code) return createRedirectResponse(request, '/login');
 

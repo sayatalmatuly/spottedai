@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import * as XLSX from 'xlsx';
 import { createClient } from '@/lib/supabase/client';
 import { saveAttendance } from '@/app/actions';
 import { dateLocale, translate } from '@/lib/locale';
@@ -39,6 +40,7 @@ interface DashboardProps {
   unmarkedClasses: ClassInfo[];
   markedCount: number;
   today: string;
+  aiPeriodStart: string;
   heroAttendanceText: string;
 }
 
@@ -48,6 +50,27 @@ const LOG_GRADIENTS = [
   'linear-gradient(155deg,#8E5CFF,#0071E3)',
   'linear-gradient(155deg,#30D158,#00B37D)'
 ];
+
+const EXCEL_STATUS: Record<AttendanceStatus, string> = {
+  present: 'Присутствовал',
+  late: 'Опоздал',
+  absent: 'Отсутствовал',
+};
+
+const EXCEL_ABSENCE_REASON: Record<AbsenceReason, string> = {
+  sick: 'Болеет',
+  excused: 'Отпросился',
+  valid: 'Уважительная причина',
+  unexcused: 'Без уважительной причины',
+};
+
+interface ExportAttendanceLog {
+  date: string;
+  status: AttendanceStatus;
+  absence_reason: AbsenceReason | null;
+  students: { full_name: string } | null;
+  classes: { name: string } | null;
+}
 
 export default function AttendanceDashboard(props: DashboardProps) {
   const { locale } = useLanguage();
@@ -65,6 +88,12 @@ export default function AttendanceDashboard(props: DashboardProps) {
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState(props.today);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [exportClassId, setExportClassId] = useState<string>('all');
+  const [exportPeriod, setExportPeriod] = useState<'month' | 'quarter' | 'half_year' | 'year'>('month');
+  const [isExporting, setIsExporting] = useState(false);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -86,8 +115,32 @@ export default function AttendanceDashboard(props: DashboardProps) {
     }
   }, [props.classes, activeClassId]);
 
-  const loadStudentsForModal = async () => {
+  // Generated summaries exist only in the browser. A new Monday receives a
+  // fresh week key from the server, so the previous week's text is cleared.
+  useEffect(() => {
+    setAiSummary(null);
+    setAiError(null);
+  }, [props.aiPeriodStart]);
+
+  useEffect(() => {
+    const now = new Date();
+    const nextMonday = new Date(now);
+    const daysUntilMonday = ((8 - now.getUTCDay()) % 7) || 7;
+    nextMonday.setUTCDate(now.getUTCDate() + daysUntilMonday);
+    nextMonday.setUTCHours(0, 0, 0, 0);
+
+    const refreshTimer = window.setTimeout(() => {
+      setAiSummary(null);
+      setAiError(null);
+      router.refresh();
+    }, Math.max(nextMonday.getTime() - now.getTime(), 1));
+
+    return () => window.clearTimeout(refreshTimer);
+  }, [props.aiPeriodStart, router]);
+
+  const loadStudentsForModal = async (dateOverride?: string) => {
     if (!activeClassId) return;
+    const dateToLoad = dateOverride ?? selectedDate;
     setIsLoadingStudents(true);
     try {
       const [studentsResult, logsResult] = await Promise.all([
@@ -100,7 +153,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
           .from('attendance_logs')
           .select('student_id, status, absence_reason')
           .eq('class_id', activeClassId)
-          .eq('date', props.today),
+          .eq('date', dateToLoad),
       ]);
       const studentsData = studentsResult.data;
       const logsData = logsResult.data;
@@ -132,8 +185,16 @@ export default function AttendanceDashboard(props: DashboardProps) {
   };
 
   const handleOpenModal = () => {
+    setSelectedDate(props.today);
+    setSaveError(null);
     setIsModalOpen(true);
-    loadStudentsForModal();
+    loadStudentsForModal(props.today);
+  };
+
+  const handleDateChange = (newDate: string) => {
+    setSelectedDate(newDate);
+    setSaveError(null);
+    loadStudentsForModal(newDate);
   };
 
   const handleGenerateAiSummary = async () => {
@@ -143,14 +204,10 @@ export default function AttendanceDashboard(props: DashboardProps) {
     setAiSummary(null);
 
     try {
-      const dateFromObj = new Date(props.today);
-      dateFromObj.setUTCDate(dateFromObj.getUTCDate() - 29);
-      const dateFrom = dateFromObj.toISOString().slice(0, 10);
-
       const res = await fetch('/api/ai/summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ classId: activeClassId, dateFrom, dateTo: props.today, locale }),
+        body: JSON.stringify({ classId: activeClassId, dateFrom: props.aiPeriodStart, dateTo: props.today, locale }),
       });
 
       const data = await res.json();
@@ -192,6 +249,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
 
   const handleSaveMarks = async () => {
     if (!activeClassId) return;
+    setSaveError(null);
     setIsSavingMarks(true);
     try {
       const marks = students.map((student) => ({
@@ -199,7 +257,7 @@ export default function AttendanceDashboard(props: DashboardProps) {
         status: student.status,
         absenceReason: student.absence_reason,
       }));
-      await saveAttendance(activeClassId, props.today, marks);
+      await saveAttendance(activeClassId, selectedDate, marks);
       
       setIsModalOpen(false);
       setIsToastVisible(true);
@@ -210,9 +268,96 @@ export default function AttendanceDashboard(props: DashboardProps) {
       router.refresh();
     } catch (e) {
       console.error(e);
-      alert(t('Қатысу деректерін сақтау мүмкін болмады', 'Could not save attendance'));
+      setSaveError(t('Қатысу деректерін сақтау мүмкін болмады', 'Could not save attendance'));
     } finally {
       setIsSavingMarks(false);
+    }
+  };
+
+  const PERIOD_DAYS = { month: 30, quarter: 90, half_year: 182, year: 365 } as const;
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const dateFromObj = new Date(props.today);
+      dateFromObj.setUTCDate(dateFromObj.getUTCDate() - PERIOD_DAYS[exportPeriod]);
+      const dateFrom = dateFromObj.toISOString().slice(0, 10);
+
+      let query = supabase
+        .from('attendance_logs')
+        .select('date, status, absence_reason, students(full_name), classes(name)')
+        .gte('date', dateFrom)
+        .lte('date', props.today)
+        .order('date', { ascending: true });
+
+      if (exportClassId !== 'all') query = query.eq('class_id', exportClassId);
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!data || data.length === 0) {
+        alert(t('Таңдалған кезеңде деректер жоқ', 'No data for the selected period'));
+        return;
+      }
+
+      const attendanceLogs = (data as ExportAttendanceLog[])
+        .slice()
+        .sort((first, second) => (
+          first.date.localeCompare(second.date)
+          || (first.classes?.name ?? '').localeCompare(second.classes?.name ?? '', 'ru')
+          || (first.students?.full_name ?? '').localeCompare(second.students?.full_name ?? '', 'ru')
+        ));
+      const rows = attendanceLogs.map((log) => [
+        new Date(`${log.date}T00:00:00`),
+        log.classes?.name ?? '',
+        log.students?.full_name ?? '',
+        EXCEL_STATUS[log.status],
+        log.status === 'absent' && log.absence_reason
+          ? EXCEL_ABSENCE_REASON[log.absence_reason]
+          : '',
+      ]);
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        ['Журнал посещаемости'],
+        [`Период: ${dateFrom} — ${props.today}`],
+        [],
+        ['Дата', 'Класс', 'Ученик', 'Статус', 'Причина отсутствия'],
+        ...rows,
+      ]);
+      const lastRow = rows.length + 4;
+      worksheet['!merges'] = [XLSX.utils.decode_range('A1:E1')];
+      worksheet['!cols'] = [
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 32 },
+        { wch: 20 },
+        { wch: 30 },
+      ];
+      worksheet['!rows'] = [{ hpt: 24 }, { hpt: 18 }, { hpt: 8 }, { hpt: 20 }];
+      worksheet['!autofilter'] = { ref: `A4:E${lastRow}` };
+
+      for (let rowIndex = 5; rowIndex <= lastRow; rowIndex++) {
+        const dateCell = worksheet[`A${rowIndex}`];
+        if (dateCell) dateCell.z = 'dd.mm.yyyy';
+      }
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Посещаемость');
+      const file = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', compression: true });
+      const blob = new Blob([file], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `attendance_${dateFrom}_${props.today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setIsExportOpen(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -465,19 +610,31 @@ export default function AttendanceDashboard(props: DashboardProps) {
             </div>
           </div>
 
-          <button className="btn-mark" onClick={handleOpenModal}>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <div className="hero-actions">
+            <button className="btn-mark" onClick={handleOpenModal}>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 12l5 5L20 6" />
+              </svg>
+              {t('Оқушыларды белгілеу', 'Mark attendance')}
+            </button>
+            <button
+              className="btn-mark"
+              onClick={() => setIsExportOpen(true)}
+              style={{ background: 'var(--text-1, #1D1D1F)', minWidth: 0 }}
             >
-              <path d="M4 12l5 5L20 6" />
-            </svg>
-            {t('Оқушыларды белгілеу', 'Mark attendance')}
-          </button>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              {t('Экспорт', 'Export')}
+            </button>
+          </div>
         </section>
 
         {/* STAT ROW */}
@@ -559,9 +716,9 @@ export default function AttendanceDashboard(props: DashboardProps) {
                 {isAiLoading
                   ? t('Талдануда…', 'Analyzing…')
                   : t(
-                    `${activeClass?.name || t('сынып', 'class')} бойынша шолу (30 күн)`,
-                    `${activeClass?.name || 'class'} overview (30 days)`,
-                    `Обзор по ${activeClass?.name || 'классу'} (30 дней)`
+                    `${activeClass?.name || t('сынып', 'class')} бойынша апталық шолу`,
+                    `${activeClass?.name || 'class'} weekly overview`,
+                    `Недельный обзор по ${activeClass?.name || 'классу'}`
                   )}
               </button>
 
@@ -787,12 +944,30 @@ export default function AttendanceDashboard(props: DashboardProps) {
         <div className="modal">
           <div className="modal-head">
             <div>
-              <h3>{t('Оқушыларды белгілеу', 'Mark attendance')}</h3>
+              <h3>
+                {selectedDate !== props.today
+                  ? t(
+                      `${activeClass?.name || 'Сынып'} · ${new Date(selectedDate).toLocaleDateString(dateLocale(locale), { day: 'numeric', month: 'long' })}`,
+                      `${activeClass?.name || 'Class'} · ${new Date(selectedDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long' })}`
+                    )
+                  : t('Оқушыларды белгілеу', 'Mark attendance')}
+              </h3>
               <div className="sub">{activeClass?.name || t('Сынып', 'Class')} · {capitalizedDate}</div>
             </div>
-            <button className="modal-close" onClick={() => setIsModalOpen(false)}>
+            <button className="modal-close" onClick={() => { setIsModalOpen(false); setSaveError(null); }}>
               ×
             </button>
+          </div>
+          <div className="modal-date-picker">
+            <label>
+              {t('Күні', 'Date')}:
+              <input
+                type="date"
+                value={selectedDate}
+                max={props.today}
+                onChange={(e) => handleDateChange(e.target.value)}
+              />
+            </label>
           </div>
 
           <div className="modal-body">
@@ -856,7 +1031,20 @@ export default function AttendanceDashboard(props: DashboardProps) {
           </div>
 
           <div className="modal-foot">
-            <button className="btn-cancel" onClick={() => setIsModalOpen(false)}>
+            {saveError && (
+              <div style={{
+                width: '100%',
+                padding: '8px 14px',
+                borderRadius: '10px',
+                fontSize: '13px',
+                marginBottom: '8px',
+                background: 'rgba(255, 69, 58, 0.14)',
+                color: '#FF453A',
+              }}>
+                {saveError}
+              </div>
+            )}
+            <button className="btn-cancel" onClick={() => { setIsModalOpen(false); setSaveError(null); }}>
               {t('Бас тарту', 'Cancel')}
             </button>
             <button className="btn-save" onClick={handleSaveMarks} disabled={isLoadingStudents || isSavingMarks}>
@@ -865,6 +1053,76 @@ export default function AttendanceDashboard(props: DashboardProps) {
           </div>
         </div>
       </div>
+
+      {/* EXPORT MODAL */}
+      {isExportOpen && (
+        <div
+          className="overlay open"
+          onClick={(e) => { if (e.target === e.currentTarget) setIsExportOpen(false); }}
+        >
+          <div className="modal export-modal">
+            <div className="modal-head">
+              <div>
+                <h3>{t('Қатысу деректерін экспорттау', 'Export attendance data')}</h3>
+                <div className="sub">{t('Excel файлы ретінде жүктеу', 'Download as Excel file', 'Скачать в формате Excel')}</div>
+              </div>
+              <button className="modal-close" onClick={() => setIsExportOpen(false)}>×</button>
+            </div>
+            <div className="modal-body export-modal-body">
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-2)' }}>
+                  {t('Сынып', 'Class')}
+                </label>
+                <select
+                  value={exportClassId}
+                  onChange={(e) => setExportClassId(e.target.value)}
+                >
+                  <option value="all">{t('Барлық сыныптар', 'All classes')}</option>
+                  {props.classes.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-2)' }}>
+                  {t('Кезең', 'Period')}
+                </label>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {[
+                    { key: 'month' as const, label: t('1 ай', '1 month') },
+                    { key: 'quarter' as const, label: t('3 ай', '3 months') },
+                    { key: 'half_year' as const, label: t('6 ай', '6 months') },
+                    { key: 'year' as const, label: t('1 жыл', '1 year') },
+                  ].map(p => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => setExportPeriod(p.key)}
+                      style={{
+                        padding: '6px 14px', borderRadius: '8px', border: 'none',
+                        fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                        background: exportPeriod === p.key ? 'var(--brand, #0071E3)' : 'rgba(0,0,0,0.05)',
+                        color: exportPeriod === p.key ? '#fff' : 'var(--text-2)',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn-cancel" onClick={() => setIsExportOpen(false)}>
+                {t('Бас тарту', 'Cancel')}
+              </button>
+              <button className="btn-save" onClick={handleExport} disabled={isExporting}>
+                {isExporting ? t('Жүктелуде...', 'Downloading...') : t('Excel жүктеу', 'Download Excel', 'Скачать Excel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TOAST */}
       <div className={`toast ${isToastVisible ? 'show' : ''}`}>

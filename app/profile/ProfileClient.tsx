@@ -119,7 +119,7 @@ export default function ProfileClient({ profile, userEmail }: ProfileClientProps
             <div className="profile-info-grid">
               <div className="profile-info-item">
                 <span>{t('Жүйедегі рөлі', 'Role in the system')}</span>
-                <strong>{profile?.role === 'ADMIN' ? 'ADMIN' : 'TEACHER'}</strong>
+                <strong>{profile?.role === 'ADMIN' ? t('Әкімші', 'Administrator') : t('Мұғалім', 'Teacher')}</strong>
               </div>
               <div className="profile-info-item">
                 <span>{t('Жасалған күні', 'Created on')}</span>
