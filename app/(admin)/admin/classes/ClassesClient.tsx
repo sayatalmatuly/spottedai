@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState, useCallback } from 'react';
-import { addClass, deleteClass, addStudent, deleteStudent } from './actions';
+import { useMemo, useState, useCallback, type ChangeEvent } from 'react';
+import { addClass, deleteClass, addStudent, deleteStudent, importFirstGradeStudents } from './actions';
 import { createClient } from '@/lib/supabase/client';
 import type { Student } from '@/lib/types';
 import { translate } from '@/lib/locale';
@@ -11,22 +11,114 @@ interface UIClassInfo {
   id: string;
   name: string;
   teacher_id: string | null;
+  academic_year_start?: number;
   student_count?: number;
   teacher?: { id: string; full_name: string; } | null;
 }
 
+function parseRosterCsv(contents: string) {
+  const delimiter = (contents.split(/\r?\n/, 1)[0].match(/;/g) || []).length
+    > (contents.split(/\r?\n/, 1)[0].match(/,/g) || []).length
+    ? ';'
+    : ',';
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let quoted = false;
+
+  for (let index = 0; index < contents.length; index++) {
+    const character = contents[index];
+    if (character === '"') {
+      if (quoted && contents[index + 1] === '"') {
+        field += '"';
+        index++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === delimiter && !quoted) {
+      row.push(field.trim());
+      field = '';
+    } else if ((character === '\n' || character === '\r') && !quoted) {
+      if (character === '\r' && contents[index + 1] === '\n') index++;
+      row.push(field.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      field = '';
+    } else {
+      field += character;
+    }
+  }
+
+  if (quoted) throw new Error('CSV contains an unclosed quoted field');
+  row.push(field.trim());
+  if (row.some(Boolean)) rows.push(row);
+  if (rows.length < 2) throw new Error('CSV must contain a header and at least one student');
+
+  const normalizeHeader = (header: string) => header.replace(/^\uFEFF/, '').toLocaleLowerCase().replace(/[\s_-]/g, '');
+  const headers = rows[0].map(normalizeHeader);
+  const classIndex = headers.findIndex((header) => ['class', 'classname', 'класс', 'сынып'].includes(header));
+  const nameIndex = headers.findIndex((header) => ['fullname', 'studentname', 'name', 'фио', 'атыжөні'].includes(header));
+  if (classIndex < 0 || nameIndex < 0) {
+    throw new Error('CSV headers must include class and full_name');
+  }
+
+  return rows.slice(1).map((values) => ({
+    className: values[classIndex] || '',
+    fullName: values[nameIndex] || '',
+  })).filter((entry) => entry.className || entry.fullName);
+}
+
 export default function ClassesClient({ 
   initialClasses,
+  archivedClasses,
 }: { 
   initialClasses: UIClassInfo[];
+  archivedClasses: UIClassInfo[];
 }) {
   const { locale } = useLanguage();
-  const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
+  const t = (kazakh: string, english: string, russian?: string) => translate(locale, kazakh, english, russian);
   const supabase = useMemo(() => createClient(), []);
   const [isAddClassModalOpen, setIsAddClassModalOpen] = useState(false);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [expandedClassId, setExpandedClassId] = useState<string | null>(null);
   const [studentsByClass, setStudentsByClass] = useState<Map<string, Student[]>>(new Map());
   const [loadingClassId, setLoadingClassId] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleRosterUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+
+    setImportMessage(null);
+    setIsImporting(true);
+    try {
+      const rows = parseRosterCsv(await file.text());
+      if (rows.length > 2000) throw new Error('CSV cannot contain more than 2,000 students');
+      const result = await importFirstGradeStudents(rows);
+      setImportMessage({
+        type: 'success',
+        text: t(
+          `Қосылды: ${result.inserted}, өткізіп жіберілді: ${result.skipped}.`,
+          `Added: ${result.inserted}; skipped: ${result.skipped}.`,
+          `Добавлено: ${result.inserted}, пропущено: ${result.skipped}.`
+        ),
+      });
+    } catch (error) {
+      console.error(error);
+      setImportMessage({
+        type: 'error',
+        text: t(
+          'CSV файлын импорттау мүмкін болмады. Тақырыптары «class» және «full_name» болуы керек.',
+          'Could not import the CSV. It must have "class" and "full_name" headers.',
+          'Не удалось импортировать CSV. Нужны заголовки «class» и «full_name».'
+        ),
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   const loadStudentsForClass = useCallback(async (classId: string) => {
     setLoadingClassId(classId);
@@ -50,10 +142,28 @@ export default function ClassesClient({
 
   return (
     <>
-      <div style={{marginBottom: '24px'}}>
+      <div style={{display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '24px'}}>
         <button onClick={() => setIsAddClassModalOpen(true)} className="admin-btn admin-btn-primary">
           {t('Сынып қосу', 'Add class')}
         </button>
+        <label className="admin-btn admin-btn-secondary" style={{ opacity: isImporting ? 0.6 : 1 }}>
+          {isImporting ? t('Импорт...', 'Importing...') : t('1-сынып тізімін CSV-ден импорттау', 'Import first-grade roster CSV', 'Импорт списка 1-х классов из CSV')}
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleRosterUpload}
+            disabled={isImporting}
+            style={{ display: 'none' }}
+          />
+        </label>
+        {importMessage && (
+          <span
+            role="status"
+            style={{ color: importMessage.type === 'error' ? 'var(--red)' : 'var(--text-2)', fontSize: '13px' }}
+          >
+            {importMessage.text}
+          </span>
+        )}
       </div>
 
       <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
@@ -166,6 +276,43 @@ export default function ClassesClient({
           })
         )}
       </div>
+
+      <section className="admin-card" style={{ marginTop: '24px' }}>
+        <button
+          type="button"
+          className="admin-btn admin-btn-secondary"
+          onClick={() => setIsArchiveOpen((open) => !open)}
+          aria-expanded={isArchiveOpen}
+        >
+          {t('Архив сыныптары', 'Archived classes', 'Архив классов')} ({archivedClasses.length})
+        </button>
+        {isArchiveOpen && (
+          archivedClasses.length > 0 ? (
+            <table className="admin-table" style={{ marginTop: '16px' }}>
+              <thead>
+                <tr>
+                  <th>{t('Оқу жылы', 'Academic year', 'Учебный год')}</th>
+                  <th>{t('Сынып', 'Class', 'Класс')}</th>
+                  <th>{t('Сынып жетекшісі', 'Class teacher', 'Классный руководитель')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archivedClasses.map((classInfo) => (
+                  <tr key={classInfo.id}>
+                    <td>{classInfo.academic_year_start}–{(classInfo.academic_year_start || 0) + 1}</td>
+                    <td>{classInfo.name}</td>
+                    <td>{classInfo.teacher?.full_name || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="admin-empty" style={{ marginTop: '16px' }}>
+              {t('Архив бос', 'The archive is empty', 'Архив пуст')}
+            </div>
+          )
+        )}
+      </section>
 
       {isAddClassModalOpen && (
         <div className="admin-overlay">

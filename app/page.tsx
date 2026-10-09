@@ -3,6 +3,8 @@ import { isAdminRole } from '@/lib/auth';
 import { sortClassesNaturally } from '@/lib/class-sort';
 import { translate } from '@/lib/locale';
 import { getCurrentLocale } from '@/lib/locale-server';
+import { runAnnualClassRolloverIfDue } from '@/lib/annual-class-rollover';
+import { withArchiveSchemaFallback } from '@/lib/class-schema-compat';
 import AttendanceDashboard from './AttendanceDashboard';
 import type {
   AttendanceInsight,
@@ -171,6 +173,7 @@ async function loadStudentDirectory(supabase: Awaited<ReturnType<typeof createCl
 }
 
 export default async function DashboardPage() {
+  await runAnnualClassRolloverIfDue();
   const supabase = await createClient();
   const locale = await getCurrentLocale();
   const t = (kazakh: string, english: string, russian?: string) => translate(locale, kazakh, english, russian);
@@ -192,13 +195,16 @@ export default async function DashboardPage() {
         .eq('id', user.id)
         .single()
     : Promise.resolve({ data: null });
-  const classesPromise = supabase
-    .from('classes')
-    .select('id, name, teacher_id, student_count');
+  const classesPromise = withArchiveSchemaFallback(
+    () => supabase
+      .from('classes')
+      .select('id, name, teacher_id, student_count')
+      .eq('is_archived', false),
+    () => supabase
+      .from('classes')
+      .select('id, name, teacher_id, student_count')
+  );
   const studentsPromise = loadStudentDirectory(supabase);
-  const totalStudentsPromise = supabase
-    .from('students')
-    .select('id', { count: 'exact', head: true });
   const attendanceRowsPromise = loadAttendanceRows(supabase, analyticsStart, today);
   const recentLogsPromise = supabase
     .from('attendance_logs')
@@ -211,11 +217,10 @@ export default async function DashboardPage() {
     .order('date', { ascending: false })
     .limit(200);
 
-  const [profileResult, classesResult, students, totalStudentsResult, attendanceRows, recentLogsResult] = await Promise.all([
+  const [profileResult, classesQuery, students, attendanceRows, recentLogsResult] = await Promise.all([
     profilePromise,
     classesPromise,
     studentsPromise,
-    totalStudentsPromise,
     attendanceRowsPromise,
     recentLogsPromise,
   ]);
@@ -237,7 +242,7 @@ export default async function DashboardPage() {
       .toUpperCase();
   }
 
-  const classesRaw = classesResult.data;
+  const classesRaw = classesQuery.result.data;
   const classes: ClassInfo[] = sortClassesNaturally(
     (classesRaw || []).map((classRow: any) => ({
       id: classRow.id,
@@ -245,10 +250,12 @@ export default async function DashboardPage() {
       teacher_id: classRow.teacher_id,
       student_count: classRow.student_count,
     }))
-  );
+  ).filter((classInfo) => userRole === 'ADMIN' || classInfo.teacher_id === user?.id);
+  const visibleClassIds = new Set(classes.map((classInfo) => classInfo.id));
+  const visibleStudents = students.filter((student) => visibleClassIds.has(student.class_id));
   const classNameById = new Map(classes.map((classInfo) => [classInfo.id, classInfo.name]));
   const studentById = new Map(
-    students.map((student) => [
+    visibleStudents.map((student) => [
       student.id,
       { name: student.full_name },
     ])
@@ -268,6 +275,8 @@ export default async function DashboardPage() {
   const weeklyLatenessByWeekday = new Map<number, StatusTotals>();
 
   for (const row of attendanceRows) {
+    if (!visibleClassIds.has(row.class_id)) continue;
+
     let dateTotals = totalsByDate.get(row.date);
     if (!dateTotals) {
       dateTotals = createTotals();
@@ -330,7 +339,7 @@ export default async function DashboardPage() {
     present: todayTotals.present,
     late: todayTotals.late,
     absent: todayTotals.absent,
-    total: totalStudentsResult.count || 0,
+    total: visibleStudents.length,
   };
 
   const classBarStats: ClassBarStat[] = classes
@@ -514,6 +523,8 @@ export default async function DashboardPage() {
   const logMap = new Map<string, LogEntry>();
   if (recentLogsRaw) {
     for (const row of recentLogsRaw as any[]) {
+      if (!visibleClassIds.has(row.class_id)) continue;
+
       const key = `${row.class_id}_${row.date}`;
       if (!logMap.has(key)) {
         logMap.set(key, {

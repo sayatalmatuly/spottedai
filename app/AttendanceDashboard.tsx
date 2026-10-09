@@ -279,6 +279,12 @@ export default function AttendanceDashboard(props: DashboardProps) {
   const handleExport = async () => {
     setIsExporting(true);
     try {
+      const visibleClassIds = props.classes.map((classInfo) => classInfo.id);
+      if (visibleClassIds.length === 0) {
+        alert(t('Таңдалған кезеңде деректер жоқ', 'No data for the selected period'));
+        return;
+      }
+
       const dateFromObj = new Date(props.today);
       dateFromObj.setUTCDate(dateFromObj.getUTCDate() - PERIOD_DAYS[exportPeriod]);
       const dateFrom = dateFromObj.toISOString().slice(0, 10);
@@ -290,7 +296,13 @@ export default function AttendanceDashboard(props: DashboardProps) {
         .lte('date', props.today)
         .order('date', { ascending: true });
 
-      if (exportClassId !== 'all') query = query.eq('class_id', exportClassId);
+      if (exportClassId === 'all') {
+        query = query.in('class_id', visibleClassIds);
+      } else if (visibleClassIds.includes(exportClassId)) {
+        query = query.eq('class_id', exportClassId);
+      } else {
+        throw new Error('Not authorized for this class');
+      }
 
       const { data, error } = await query;
       if (error) throw new Error(error.message);

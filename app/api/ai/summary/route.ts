@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { translate, type AppLocale } from '@/lib/locale';
 import { getCurrentLocale } from '@/lib/locale-server';
+import { withArchiveSchemaFallback } from '@/lib/class-schema-compat';
 import type { AttendanceStatus } from '@/lib/types';
 
 const MAX_PERIOD_DAYS = 92;
@@ -139,6 +140,28 @@ export async function POST(req: NextRequest) {
       { error: t('classId, dateFrom және dateTo міндетті және дұрыс болуы керек.', 'classId, dateFrom, and dateTo are required and must be valid.') },
       { status: 400 }
     );
+  }
+
+  if (profile.role === 'TEACHER') {
+    const classQuery = await withArchiveSchemaFallback(
+      () => supabase
+        .from('classes')
+        .select('id')
+        .eq('id', classId)
+        .eq('teacher_id', user.id)
+        .eq('is_archived', false)
+        .maybeSingle(),
+      () => supabase
+        .from('classes')
+        .select('id')
+        .eq('id', classId)
+        .eq('teacher_id', user.id)
+        .maybeSingle()
+    );
+    const assignedClass = classQuery.result.data;
+    if (!assignedClass) {
+      return NextResponse.json({ error: t('Бұл сыныпқа рұқсат жоқ.', 'You are not assigned to this class.') }, { status: 403 });
+    }
   }
 
   const periodLength = (Date.parse(`${dateTo}T00:00:00Z`) - Date.parse(`${dateFrom}T00:00:00Z`)) / 86_400_000;

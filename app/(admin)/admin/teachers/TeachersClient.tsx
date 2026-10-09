@@ -1,7 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { assignTeacherToClass, approveUserRequest, rejectUserRequest } from './actions';
+import {
+  assignTeacherToClass,
+  approveUserRequest,
+  deleteUserAccount,
+  rejectUserRequest,
+  removeTeacherFromClass,
+} from './actions';
 import type { Profile, ClassInfo } from '@/lib/types';
 import { dateLocale, translate } from '@/lib/locale';
 import { useLanguage } from '@/app/components/LanguageProvider';
@@ -16,7 +22,7 @@ export default function TeachersClient({
   classes: ClassInfo[]; 
 }) {
   const { locale } = useLanguage();
-  const t = (kazakh: string, english: string) => translate(locale, kazakh, english);
+  const t = (kazakh: string, english: string, russian?: string) => translate(locale, kazakh, english, russian);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
 
@@ -45,6 +51,39 @@ export default function TeachersClient({
     } catch (e) {
       console.error(e);
       setActionError({ id: userId, message: t('Пайдаланушыны қабылдамау мүмкін болмады. Қайталап көріңіз.', 'Could not reject this request, please try again.') });
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleUnassign = async (teacherId: string, classId: string) => {
+    setLoadingId(teacherId);
+    setActionError(null);
+    try {
+      await removeTeacherFromClass(teacherId, classId);
+    } catch (e) {
+      console.error(e);
+      setActionError({ id: teacherId, message: t('Сыныпты мұғалімнен ажырату мүмкін болмады.', 'Could not unassign this class.', 'Не удалось отвязать класс от учителя.') });
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleDeleteUser = async (user: Profile) => {
+    const confirmed = window.confirm(t(
+      `${user.full_name} пайдаланушысын біржола өшіресіз бе? Оған тиесілі сабақ кестесі және өзі енгізген қатысу белгілері де өшіріледі.`,
+      `Permanently delete ${user.full_name}? Their schedule and attendance records they created will also be deleted.`,
+      `Удалить пользователя ${user.full_name} безвозвратно? Также будут удалены его расписание и созданные им отметки посещаемости.`
+    ));
+    if (!confirmed) return;
+
+    setLoadingId(user.id);
+    setActionError(null);
+    try {
+      await deleteUserAccount(user.id);
+    } catch (e) {
+      console.error(e);
+      setActionError({ id: user.id, message: t('Пайдаланушыны өшіру мүмкін болмады.', 'Could not delete this user.', 'Не удалось удалить пользователя.') });
     } finally {
       setLoadingId(null);
     }
@@ -165,7 +204,22 @@ export default function TeachersClient({
                     </td>
                     <td>
                       {userClasses.length > 0 
-                        ? userClasses.map(c => c.name).join(', ')
+                        ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {userClasses.map(c => (
+                              <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                {c.name}
+                                <button
+                                  type="button"
+                                  className="admin-btn admin-btn-danger"
+                                  onClick={() => handleUnassign(user.id, c.id)}
+                                  disabled={loadingId === user.id}
+                                  aria-label={t(`Сыныпты ажырату: ${c.name}`, `Unassign class: ${c.name}`, `Отвязать класс: ${c.name}`)}
+                                >
+                                  {t('Ажырату', 'Unassign', 'Отвязать')}
+                                </button>
+                              </span>
+                            ))}
+                          </div>
                         : <span style={{ color: 'var(--text-3)' }}>{t('Сыныптар жоқ', 'No classes')}</span>
                       }
                     </td>
@@ -185,7 +239,20 @@ export default function TeachersClient({
                         <button type="submit" className="admin-btn admin-btn-secondary">
                           {t('Бекіту', 'Assign')}
                         </button>
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn-danger"
+                          onClick={() => handleDeleteUser(user)}
+                          disabled={loadingId === user.id}
+                        >
+                          {t('Өшіру', 'Delete', 'Удалить')}
+                        </button>
                       </form>
+                      {actionError?.id === user.id && (
+                        <div style={{ marginTop: '8px', color: 'var(--red)', fontSize: '13px' }} role="alert">
+                          {actionError.message}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
